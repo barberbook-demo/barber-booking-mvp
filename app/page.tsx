@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-const services = [
-  { id: "haircut", name: "Ανδρικό κούρεμα", price: 15 },
-  { id: "haircut-beard", name: "Κούρεμα + μούσι", price: 20 },
-  { id: "beard", name: "Περιποίηση γενειάδας", price: 10 },
-] as const;
+type Service = {
+  id: string;
+  name: string;
+  price: number;
+  active: boolean;
+};
 
 const timeSlots = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30"];
 
@@ -43,6 +45,10 @@ function formatBookingDate(value: string) {
 export default function Home() {
   const [step, setStep] = useState(1);
   const [today, setToday] = useState("");
+  const [services, setServices] = useState<Service[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesError, setServicesError] = useState("");
+  const [servicesRetry, setServicesRetry] = useState(0);
   const [serviceId, setServiceId] = useState<string>("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -55,6 +61,54 @@ export default function Home() {
   useEffect(() => {
     setToday(getAthensToday());
   }, []);
+
+  useEffect(() => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    let cancelled = false;
+
+    async function loadServices() {
+      setServicesLoading(true);
+      setServicesError("");
+
+      if (!supabaseUrl || !publishableKey) {
+        setServicesError("Η σύνδεση με τον κατάλογο υπηρεσιών δεν έχει ρυθμιστεί ακόμη.");
+        setServicesLoading(false);
+        return;
+      }
+
+      try {
+        const supabase = createClient(supabaseUrl, publishableKey);
+        const { data, error } = await supabase
+          .from("services")
+          .select("id, name, price, active")
+          .eq("active", true)
+          .order("name", { ascending: true });
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        setServices(
+          (data ?? []).map((service) => ({
+            ...service,
+            price: Number(service.price),
+          })),
+        );
+      } catch {
+        if (!cancelled) {
+          setServicesError("Δεν ήταν δυνατή η φόρτωση των υπηρεσιών. Έλεγξε τη σύνδεση και δοκίμασε ξανά.");
+        }
+      } finally {
+        if (!cancelled) setServicesLoading(false);
+      }
+    }
+
+    void loadServices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [servicesRetry]);
 
   const selectedService = services.find((service) => service.id === serviceId);
 
@@ -113,25 +167,47 @@ export default function Home() {
               <h2 id="service-heading">Τι θα κάνουμε σήμερα;</h2>
               <p className="section-copy">Επίλεξε την υπηρεσία που θέλεις.</p>
 
-              <div className="service-list">
-                {services.map((service) => (
+              {servicesLoading ? (
+                <p className="mock-note" role="status">Φόρτωση υπηρεσιών…</p>
+              ) : servicesError ? (
+                <div>
+                  <p className="mock-note" role="alert">{servicesError}</p>
                   <button
-                    className={`service-option ${serviceId === service.id ? "selected" : ""}`}
+                    className="secondary-button"
                     type="button"
-                    key={service.id}
-                    onClick={() => setServiceId(service.id)}
-                    aria-pressed={serviceId === service.id}
+                    onClick={() => setServicesRetry((attempt) => attempt + 1)}
                   >
-                    <span className="service-radio" aria-hidden="true">
-                      {serviceId === service.id && <span />}
-                    </span>
-                    <span className="service-name">{service.name}</span>
-                    <span className="service-price">{service.price} €</span>
+                    Δοκίμασε ξανά
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : services.length === 0 ? (
+                <p className="mock-note">Δεν υπάρχουν διαθέσιμες υπηρεσίες αυτή τη στιγμή.</p>
+              ) : (
+                <div className="service-list">
+                  {services.map((service) => (
+                    <button
+                      className={`service-option ${serviceId === service.id ? "selected" : ""}`}
+                      type="button"
+                      key={service.id}
+                      onClick={() => setServiceId(service.id)}
+                      aria-pressed={serviceId === service.id}
+                    >
+                      <span className="service-radio" aria-hidden="true">
+                        {serviceId === service.id && <span />}
+                      </span>
+                      <span className="service-name">{service.name}</span>
+                      <span className="service-price">{service.price} €</span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
-              <button className="primary-button" type="button" disabled={!serviceId} onClick={() => setStep(2)}>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={servicesLoading || Boolean(servicesError) || services.length === 0 || !serviceId}
+                onClick={() => setStep(2)}
+              >
                 Συνέχεια <span aria-hidden="true">→</span>
               </button>
             </section>
