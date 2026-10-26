@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 
-const services = [
-  { id: "haircut", name: "Ανδρικό κούρεμα", price: 15 },
-  { id: "haircut-beard", name: "Κούρεμα + μούσι", price: 20 },
-  { id: "beard", name: "Περιποίηση γενειάδας", price: 10 },
-] as const;
+type Service = {
+  id: string;
+  name: string;
+  price: number;
+  active: boolean;
+};
 
 const timeSlots = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30"];
 
@@ -43,6 +44,9 @@ function formatBookingDate(value: string) {
 export default function Home() {
   const [step, setStep] = useState(1);
   const [today, setToday] = useState("");
+  const [services, setServices] = useState<Service[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesError, setServicesError] = useState("");
   const [serviceId, setServiceId] = useState<string>("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -54,6 +58,66 @@ export default function Home() {
 
   useEffect(() => {
     setToday(getAthensToday());
+  }, []);
+
+  useEffect(() => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    let cancelled = false;
+
+    async function loadServices() {
+      if (!supabaseUrl || !publishableKey) {
+        setServicesError("Η σύνδεση με τον κατάλογο υπηρεσιών δεν έχει ρυθμιστεί ακόμη.");
+        setServicesLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `${supabaseUrl.replace(/\\/$/, "")}/rest/v1/services?select=id,name,price,active&active=eq.true&order=name.asc`,
+          {
+            headers: {
+              apikey: publishableKey,
+              Authorization: `Bearer ${publishableKey}`,
+            },
+            cache: "no-store",
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to load services");
+        }
+
+        const rows = (await response.json()) as Array<{
+          id: string;
+          name: string;
+          price: number | string;
+          active: boolean;
+        }>;
+
+        if (cancelled) return;
+
+        setServices(
+          rows.map((service) => ({
+            ...service,
+            price: Number(service.price),
+          })),
+        );
+        setServicesError("");
+      } catch {
+        if (!cancelled) {
+          setServicesError("Δεν ήταν δυνατή η φόρτωση των υπηρεσιών. Δοκίμασε ξανά σε λίγο.");
+        }
+      } finally {
+        if (!cancelled) setServicesLoading(false);
+      }
+    }
+
+    void loadServices();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const selectedService = services.find((service) => service.id === serviceId);
@@ -113,25 +177,38 @@ export default function Home() {
               <h2 id="service-heading">Τι θα κάνουμε σήμερα;</h2>
               <p className="section-copy">Επίλεξε την υπηρεσία που θέλεις.</p>
 
-              <div className="service-list">
-                {services.map((service) => (
-                  <button
-                    className={`service-option ${serviceId === service.id ? "selected" : ""}`}
-                    type="button"
-                    key={service.id}
-                    onClick={() => setServiceId(service.id)}
-                    aria-pressed={serviceId === service.id}
-                  >
-                    <span className="service-radio" aria-hidden="true">
-                      {serviceId === service.id && <span />}
-                    </span>
-                    <span className="service-name">{service.name}</span>
-                    <span className="service-price">{service.price} €</span>
-                  </button>
-                ))}
-              </div>
+              {servicesLoading ? (
+                <p className="mock-note" role="status">Φόρτωση υπηρεσιών…</p>
+              ) : servicesError ? (
+                <p className="mock-note" role="alert">{servicesError}</p>
+              ) : services.length === 0 ? (
+                <p className="mock-note">Δεν υπάρχουν διαθέσιμες υπηρεσίες αυτή τη στιγμή.</p>
+              ) : (
+                <div className="service-list">
+                  {services.map((service) => (
+                    <button
+                      className={`service-option ${serviceId === service.id ? "selected" : ""}`}
+                      type="button"
+                      key={service.id}
+                      onClick={() => setServiceId(service.id)}
+                      aria-pressed={serviceId === service.id}
+                    >
+                      <span className="service-radio" aria-hidden="true">
+                        {serviceId === service.id && <span />}
+                      </span>
+                      <span className="service-name">{service.name}</span>
+                      <span className="service-price">{service.price} €</span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
-              <button className="primary-button" type="button" disabled={!serviceId} onClick={() => setStep(2)}>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={servicesLoading || Boolean(servicesError) || services.length === 0 || !serviceId}
+                onClick={() => setStep(2)}
+              >
                 Συνέχεια <span aria-hidden="true">→</span>
               </button>
             </section>
