@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 type Service = {
   id: string;
@@ -47,6 +48,7 @@ export default function Home() {
   const [services, setServices] = useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [servicesError, setServicesError] = useState("");
+  const [servicesRetry, setServicesRetry] = useState(0);
   const [serviceId, setServiceId] = useState<string>("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -66,6 +68,9 @@ export default function Home() {
     let cancelled = false;
 
     async function loadServices() {
+      setServicesLoading(true);
+      setServicesError("");
+
       if (!supabaseUrl || !publishableKey) {
         setServicesError("Η σύνδεση με τον κατάλογο υπηρεσιών δεν έχει ρυθμιστεί ακόμη.");
         setServicesLoading(false);
@@ -73,40 +78,25 @@ export default function Home() {
       }
 
       try {
-        const response = await fetch(
-          `${(supabaseUrl.endsWith("/") ? supabaseUrl.slice(0, -1) : supabaseUrl)}/rest/v1/services?select=id,name,price,active&active=eq.true&order=name.asc`,
-          {
-            headers: {
-              apikey: publishableKey,
-              Authorization: `Bearer ${publishableKey}`,
-            },
-            cache: "no-store",
-          },
-        );
+        const supabase = createClient(supabaseUrl, publishableKey);
+        const { data, error } = await supabase
+          .from("services")
+          .select("id, name, price, active")
+          .eq("active", true)
+          .order("name", { ascending: true });
 
-        if (!response.ok) {
-          throw new Error("Failed to load services");
-        }
-
-        const rows = (await response.json()) as Array<{
-          id: string;
-          name: string;
-          price: number | string;
-          active: boolean;
-        }>;
-
+        if (error) throw error;
         if (cancelled) return;
 
         setServices(
-          rows.map((service) => ({
+          (data ?? []).map((service) => ({
             ...service,
             price: Number(service.price),
           })),
         );
-        setServicesError("");
       } catch {
         if (!cancelled) {
-          setServicesError("Δεν ήταν δυνατή η φόρτωση των υπηρεσιών. Δοκίμασε ξανά σε λίγο.");
+          setServicesError("Δεν ήταν δυνατή η φόρτωση των υπηρεσιών. Έλεγξε τη σύνδεση και δοκίμασε ξανά.");
         }
       } finally {
         if (!cancelled) setServicesLoading(false);
@@ -118,7 +108,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [servicesRetry]);
 
   const selectedService = services.find((service) => service.id === serviceId);
 
@@ -180,7 +170,16 @@ export default function Home() {
               {servicesLoading ? (
                 <p className="mock-note" role="status">Φόρτωση υπηρεσιών…</p>
               ) : servicesError ? (
-                <p className="mock-note" role="alert">{servicesError}</p>
+                <div>
+                  <p className="mock-note" role="alert">{servicesError}</p>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setServicesRetry((attempt) => attempt + 1)}
+                  >
+                    Δοκίμασε ξανά
+                  </button>
+                </div>
               ) : services.length === 0 ? (
                 <p className="mock-note">Δεν υπάρχουν διαθέσιμες υπηρεσίες αυτή τη στιγμή.</p>
               ) : (
