@@ -74,7 +74,7 @@ export default function Home() {
 
       try {
         const response = await fetch(
-          `${supabaseUrl.replace(/\\/$/, "")}/rest/v1/services?select=id,name,price,active&active=eq.true&order=name.asc`,
+          `${(supabaseUrl.endsWith("/") ? supabaseUrl.slice(0, -1) : supabaseUrl)}/rest/v1/services?select=id,name,price,active&active=eq.true&order=name.asc`,
           {
             headers: {
               apikey: publishableKey,
