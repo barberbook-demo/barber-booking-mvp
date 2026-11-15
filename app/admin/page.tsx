@@ -200,7 +200,7 @@ export default function AdminPage() {
     if (error || !data) {
       setDataError("Η ακύρωση δεν ολοκληρώθηκε. Ίσως το ραντεβού έχει ήδη αλλάξει κατάσταση. Ανανεώνεται η λίστα.");
       const { data: latest } = await supabase.from("bookings")
-        .select("id, service_id, customer_name, customer_phone, customer_email, starts_at, status, services(name)")
+        .select("id, service_id, barber_id, customer_name, customer_phone, customer_email, starts_at, status, services(name), barbers(name)")
         .order("starts_at", { ascending: false });
       if (latest) setBookings(latest as unknown as Booking[]);
     } else {
