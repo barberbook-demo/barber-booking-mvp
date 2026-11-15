@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 type Service = { id: string; name: string; price: number; active: boolean };
+type Booking = { id: string; service_id: string; customer_name: string; customer_phone: string; customer_email: string; starts_at: string; status: "confirmed" | "cancelled"; services: { name: string } | null };
+type BookingFilter = "all" | "today" | "upcoming" | "date";
 type BusinessDay = {
   weekday: number;
   is_open: boolean;
@@ -36,6 +38,17 @@ const EMPTY_HOURS: BusinessDay[] = Array.from({ length: 7 }, (_, weekday) => ({
 function timeValue(value: string | null) {
   return value ? value.slice(0, 5) : "";
 }
+function athensDate(value: string | Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+function formatAdminDate(value: string) {
+  return new Intl.DateTimeFormat("el-GR", { timeZone: "Europe/Athens", weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(value));
+}
+function formatAdminTime(value: string) {
+  return new Intl.DateTimeFormat("el-GR", { timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value));
+}
 
 export default function AdminPage() {
   const supabase = useMemo(() => {
@@ -55,6 +68,9 @@ export default function AdminPage() {
   const [hours, setHours] = useState<BusinessDay[]>(EMPTY_HOURS);
   const [dataError, setDataError] = useState("");
   const [notice, setNotice] = useState("");
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
+  const [bookingDate, setBookingDate] = useState(athensDate(new Date()));
   const [newName, setNewName] = useState("");
   const [newPrice, setNewPrice] = useState("15");
 
@@ -111,12 +127,13 @@ export default function AdminPage() {
         return;
       }
 
-      const [serviceResult, hoursResult] = await Promise.all([
+      const [serviceResult, hoursResult, bookingResult] = await Promise.all([
         supabase!.from("services").select("id, name, price, active").order("name"),
         supabase!.from("business_hours").select("weekday, is_open, opens_at, closes_at, break_start, break_end").order("weekday"),
+        supabase!.from("bookings").select("id, service_id, customer_name, customer_phone, customer_email, starts_at, status, services(name)").order("starts_at", { ascending: false }),
       ]);
       if (cancelled) return;
-      if (serviceResult.error || hoursResult.error) {
+      if (serviceResult.error || hoursResult.error || bookingResult.error) {
         setAuthState("error");
         setDataError("Δεν ήταν δυνατή η φόρτωση των ρυθμίσεων. Δοκίμασε ξανά.");
         return;
@@ -126,6 +143,7 @@ export default function AdminPage() {
         ...item,
         price: Number(item.price),
       })));
+      setBookings((bookingResult.data ?? []) as unknown as Booking[]);
       const savedHours = new Map((hoursResult.data ?? []).map((day) => [day.weekday, day]));
       setHours(EMPTY_HOURS.map((day) => {
         const saved = savedHours.get(day.weekday);
@@ -143,6 +161,49 @@ export default function AdminPage() {
     void verifyAndLoad();
     return () => { cancelled = true; };
   }, [authReady, userId, supabase]);
+
+  useEffect(() => {
+    if (authState !== "authorized" || !supabase) return;
+    const channel = supabase.channel("barberbook-admin-bookings")
+      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => {
+        void supabase.from("bookings")
+          .select("id, service_id, customer_name, customer_phone, customer_email, starts_at, status, services(name)")
+          .order("starts_at", { ascending: false })
+          .then(({ data }) => { if (data) setBookings(data as unknown as Booking[]); });
+      }).subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [authState, supabase]);
+
+  async function cancelBooking(booking: Booking) {
+    if (!supabase || booking.status !== "confirmed") return;
+    const appointment = `${formatAdminDate(booking.starts_at)} στις ${formatAdminTime(booking.starts_at)}`;
+    if (!window.confirm(`Να ακυρωθεί το ραντεβού ${appointment} για τον/την ${booking.customer_name};`)) return;
+    setBusy(true);
+    setDataError("");
+    const { data, error } = await supabase.from("bookings")
+      .update({ status: "cancelled" }).eq("id", booking.id).eq("status", "confirmed")
+      .select("id").maybeSingle();
+    if (error || !data) {
+      setDataError("Η ακύρωση δεν ολοκληρώθηκε. Ίσως το ραντεβού έχει ήδη αλλάξει κατάσταση. Ανανεώνεται η λίστα.");
+      const { data: latest } = await supabase.from("bookings")
+        .select("id, service_id, customer_name, customer_phone, customer_email, starts_at, status, services(name)")
+        .order("starts_at", { ascending: false });
+      if (latest) setBookings(latest as unknown as Booking[]);
+    } else {
+      setBookings((current) => current.map((item) => item.id === booking.id ? { ...item, status: "cancelled" } : item));
+      setNotice("Το ραντεβού ακυρώθηκε. Η ώρα είναι ξανά διαθέσιμη, εφόσον το επιτρέπει το ωράριο.");
+    }
+    setBusy(false);
+  }
+
+  const todayInAthens = athensDate(new Date());
+  const visibleBookings = bookings.filter((booking) => {
+    const localDate = athensDate(booking.starts_at);
+    if (bookingFilter === "today") return localDate === todayInAthens;
+    if (bookingFilter === "upcoming") return new Date(booking.starts_at).getTime() >= Date.now();
+    if (bookingFilter === "date") return localDate === bookingDate;
+    return true;
+  });
 
   async function signIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -339,7 +400,43 @@ export default function AdminPage() {
 
             <section className="admin-panel">
               <div className="admin-section-heading">
-                <div><p className="admin-eyebrow">01 / ΚΑΤΑΛΟΓΟΣ</p><h2>Υπηρεσίες και τιμές</h2></div>
+                <div><p className="admin-eyebrow">01 / ΡΑΝΤΕΒΟΥ</p><h2>Ραντεβού πελατών</h2></div>
+                <span>{bookings.length} συνολικά</span>
+              </div>
+              <div className="admin-booking-filters" role="group" aria-label="Φίλτρο ραντεβού">
+                <button type="button" className={bookingFilter === "all" ? "admin-filter is-active" : "admin-filter"} onClick={() => setBookingFilter("all")}>Όλα</button>
+                <button type="button" className={bookingFilter === "today" ? "admin-filter is-active" : "admin-filter"} onClick={() => setBookingFilter("today")}>Σήμερα</button>
+                <button type="button" className={bookingFilter === "upcoming" ? "admin-filter is-active" : "admin-filter"} onClick={() => setBookingFilter("upcoming")}>Επερχόμενα</button>
+                <button type="button" className={bookingFilter === "date" ? "admin-filter is-active" : "admin-filter"} onClick={() => setBookingFilter("date")}>Ημερομηνία</button>
+                {bookingFilter === "date" && <input aria-label="Επιλογή ημερομηνίας" type="date" value={bookingDate} onChange={(event) => setBookingDate(event.target.value)} />}
+              </div>
+              {visibleBookings.length === 0 ? <p className="admin-muted">Δεν βρέθηκαν ραντεβού για αυτή την επιλογή.</p> : (
+                <div className="admin-booking-list">
+                  {visibleBookings.map((booking) => (
+                    <article className="admin-booking-row" key={booking.id}>
+                      <div className="admin-booking-topline">
+                        <div>
+                          <strong>{booking.customer_name}</strong>
+                          <span className={booking.status === "confirmed" ? "admin-booking-status is-confirmed" : "admin-booking-status is-cancelled"}>{booking.status === "confirmed" ? "Επιβεβαιωμένο" : "Ακυρωμένο"}</span>
+                        </div>
+                        <div className="admin-booking-when"><strong>{formatAdminDate(booking.starts_at)}</strong><span>{formatAdminTime(booking.starts_at)}</span></div>
+                      </div>
+                      <div className="admin-booking-meta">
+                        <span><b>Υπηρεσία</b>{booking.services?.name ?? "Μη διαθέσιμη υπηρεσία"}</span>
+                        <span><b>Τηλέφωνο</b><a href={`tel:${booking.customer_phone}`}>{booking.customer_phone}</a></span>
+                        <span><b>Email</b><a href={`mailto:${booking.customer_email}`}>{booking.customer_email}</a></span>
+                      </div>
+                      {booking.status === "confirmed" && <div className="admin-booking-actions"><button className="admin-secondary" type="button" onClick={() => void cancelBooking(booking)} disabled={busy}>Ακύρωση ραντεβού</button></div>}
+                    </article>
+                  ))}
+                </div>
+              )}
+              <p className="admin-muted admin-booking-footnote">Οι ακυρωμένες κρατήσεις παραμένουν στο ιστορικό. Οι αλλαγές ενημερώνονται αυτόματα.</p>
+            </section>
+
+            <section className="admin-panel">
+              <div className="admin-section-heading">
+                <div><p className="admin-eyebrow">02 / ΚΑΤΑΛΟΓΟΣ</p><h2>Υπηρεσίες και τιμές</h2></div>
                 <span>{services.length} υπηρεσίες</span>
               </div>
               <div className="admin-service-list">
@@ -379,7 +476,7 @@ export default function AdminPage() {
 
             <section className="admin-panel">
               <div className="admin-section-heading">
-                <div><p className="admin-eyebrow">02 / ΠΡΟΓΡΑΜΜΑ</p><h2>Εβδομαδιαίο ωράριο</h2></div>
+                <div><p className="admin-eyebrow">03 / ΠΡΟΓΡΑΜΜΑ</p><h2>Εβδομαδιαίο ωράριο</h2></div>
                 <span>Ώρα Ελλάδας · Europe/Athens</span>
               </div>
               <p className="admin-muted admin-hours-intro">Επίλεξε τις ημέρες λειτουργίας, τις ώρες έναρξης και λήξης και, αν χρειάζεται, ένα διάλειμμα.</p>
@@ -414,7 +511,7 @@ export default function AdminPage() {
                 </div>
               </form>
             </section>
-            <p className="admin-footer-note">Οι ρυθμίσεις αυτές θα χρησιμοποιηθούν στο επόμενο στάδιο για τον υπολογισμό διαθέσιμων ωρών.</p>
+            <p className="admin-footer-note">Το ωράριο και οι υπηρεσίες χρησιμοποιούνται απευθείας στη δημόσια διαδικασία κρατήσεων.</p>
           </>
         )}
       </div>
