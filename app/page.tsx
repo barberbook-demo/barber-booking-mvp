@@ -92,8 +92,9 @@ export default function Home() {
       setServicesError("");
 
       if (!supabaseUrl || !publishableKey) {
-        setServicesError("Η σύνδεση με τον κατάλογο υπηρεσιών δεν έχει ρυθμιστεί ακόμη.");
+        setServicesError("Η σύνδεση με τις υπηρεσίες και τους κουρείς δεν έχει ρυθμιστεί ακόμη.");
         setServicesLoading(false);
+        setBarbersLoading(false);
         return;
       }
 
@@ -346,6 +347,7 @@ export default function Home() {
                   ))}
                 </div>
               )}
+              {!barbersLoading && !servicesError && barbers.length === 0 && <p className="mock-note" role="alert">Δεν υπάρχει ενεργός κουρέας για νέες κρατήσεις αυτή τη στιγμή.</p>}
 
               <button
                 className="primary-button"
@@ -406,7 +408,7 @@ export default function Home() {
               {dateError && <p className="mock-note" id="date-error" role="alert">{dateError}</p>}
               <div className="button-row">
                 <button className="secondary-button" type="button" onClick={goBack}>Πίσω</button>
-                <button className="primary-button" type="button" disabled={!date || dateChecking || Boolean(dateError) || (today !== "" && date < today)} onClick={() => setStep(3)}>
+                <button className="primary-button" type="button" disabled={!date || dateChecking || Boolean(dateError) || (today !== "" && date < today)} onClick={() => setStep(4)}>
                   Συνέχεια <span aria-hidden="true">→</span>
                 </button>
               </div>
@@ -424,7 +426,7 @@ export default function Home() {
               ) : availabilityError ? (
                 <div>
                   <p className="mock-note" role="alert">{availabilityError}</p>
-                  <button className="secondary-button" type="button" onClick={() => setStep(2)}>Επίλεξε ξανά ημερομηνία</button>
+                  <button className="secondary-button" type="button" onClick={() => setStep(3)}>Επίλεξε ξανά ημερομηνία</button>
                 </div>
               ) : availableSlots.length > 0 ? (
                 <div className="time-grid">
@@ -443,7 +445,7 @@ export default function Home() {
               )}
               <div className="button-row">
                 <button className="secondary-button" type="button" onClick={goBack}>Πίσω</button>
-                <button className="primary-button" type="button" disabled={!time || availabilityLoading || Boolean(availabilityError) || !availableSlots.includes(time)} onClick={() => setStep(4)}>
+                <button className="primary-button" type="button" disabled={!time || availabilityLoading || Boolean(availabilityError) || !availableSlots.includes(time)} onClick={() => setStep(5)}>
                   Συνέχεια <span aria-hidden="true">→</span>
                 </button>
               </div>
