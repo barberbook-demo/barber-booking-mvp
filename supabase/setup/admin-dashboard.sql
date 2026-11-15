@@ -11,7 +11,6 @@ create table if not exists private.admin_config (
   admin_user_id uuid null references auth.users(id) on delete set null
 );
 revoke all on table private.admin_config from public, anon, authenticated;
-alter table private.admin_config enable row level security;
 insert into private.admin_config (singleton, admin_user_id)
 values (true, null)
 on conflict (singleton) do nothing;
