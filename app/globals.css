@@ -487,3 +487,63 @@ button:focus-visible, input:focus-visible, a:focus-visible {
   .admin-block-row .admin-secondary { width: 100%; }
   .admin-block-form .admin-hours-footer { align-items: stretch; }
 }
+
+
+/* Multi-barber administration */
+.admin-booking-barber-filter {
+  display: flex; align-items: center; gap: 8px; color: var(--muted);
+  font-size: 11px; font-weight: 700;
+}
+.admin-booking-barber-filter select,
+.admin-block-scope select {
+  min-width: 150px; height: 36px; padding: 0 10px; border: 1px solid var(--line);
+  border-radius: 6px; background: #fff; color: var(--ink); font: inherit; font-size: 12px;
+}
+.admin-staff-add { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.admin-staff-add > label, .admin-staff-name-form > label {
+  display: block; margin-bottom: 8px; color: #55534d; font-size: 11px; font-weight: 700;
+}
+.admin-staff-add > div, .admin-staff-name-form > div {
+  display: flex; align-items: center; gap: 10px;
+}
+.admin-staff-add input, .admin-staff-name-form input {
+  flex: 1; min-width: 0; height: 40px; padding: 0 11px;
+  border: 1px solid #dedcd5; border-radius: 6px; background: #fff; color: var(--ink);
+  font: inherit; font-size: 13px;
+}
+.admin-staff-add > p { margin: 8px 0 0; font-size: 11px; }
+.admin-staff-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; padding-top: 16px; }
+.admin-staff-choice {
+  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink);
+  text-align: left; cursor: pointer;
+}
+.admin-staff-choice.is-selected { border-color: var(--accent); background: #f7f5f0; }
+.admin-staff-avatar {
+  display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px;
+  overflow: hidden; border-radius: 50%; background: #e9e6de; color: #625c50; font-weight: 700;
+}
+.admin-staff-avatar img, .admin-staff-photo img { width: 100%; height: 100%; object-fit: cover; }
+.admin-staff-choice > span:nth-child(2) { display: grid; gap: 3px; min-width: 0; }
+.admin-staff-choice strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.admin-staff-choice small { color: var(--muted); font-size: 10px; }
+.admin-staff-arrow { margin-left: auto; color: var(--muted); }
+.admin-staff-profile { display: flex; align-items: center; gap: 16px; margin: 12px 0 20px; }
+.admin-staff-photo {
+  display: grid; place-items: center; flex: 0 0 88px; width: 88px; height: 88px;
+  overflow: hidden; border-radius: 10px; background: #e9e6de; color: #625c50; font-size: 28px; font-weight: 700;
+}
+.admin-staff-profile-actions { display: grid; justify-items: start; gap: 7px; }
+.admin-staff-profile-actions small { color: var(--muted); font-size: 10px; }
+.admin-upload-button { position: relative; overflow: hidden; display: inline-flex; align-items: center; }
+.admin-upload-button input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.admin-staff-name-form { margin: 14px 0; }
+.admin-block-scope { display: grid; gap: 7px; max-width: 360px; margin-bottom: 16px; color: #55534d; font-size: 11px; font-weight: 700; }
+.admin-block-scope select { width: 100%; }
+@media (max-width: 640px) {
+  .admin-booking-barber-filter { width: 100%; justify-content: space-between; }
+  .admin-booking-barber-filter select { flex: 1; min-width: 0; }
+  .admin-staff-add > div, .admin-staff-name-form > div { align-items: stretch; flex-direction: column; }
+  .admin-staff-add .admin-primary, .admin-staff-name-form .admin-primary { width: 100%; }
+  .admin-staff-profile { align-items: flex-start; }
+}
