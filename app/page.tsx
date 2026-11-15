@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 type Service = {
@@ -10,7 +10,7 @@ type Service = {
   active: boolean;
 };
 
-const timeSlots = ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30"];
+type AvailableSlot = { slot_time: string };
 
 type CustomerDetails = {
   name: string;
@@ -42,6 +42,11 @@ function formatBookingDate(value: string) {
   }).format(new Date(Date.UTC(year, month - 1, day, 12)));
 }
 
+function getWeekday(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay();
+}
+
 export default function Home() {
   const [step, setStep] = useState(1);
   const [today, setToday] = useState("");
@@ -51,7 +56,13 @@ export default function Home() {
   const [servicesRetry, setServicesRetry] = useState(0);
   const [serviceId, setServiceId] = useState<string>("");
   const [date, setDate] = useState("");
+  const [dateChecking, setDateChecking] = useState(false);
+  const [dateError, setDateError] = useState("");
   const [time, setTime] = useState("");
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
+  const dateCheckRequest = useRef(0);
   const [customer, setCustomer] = useState<CustomerDetails>({
     name: "",
     phone: "",
@@ -110,10 +121,86 @@ export default function Home() {
     };
   }, [servicesRetry]);
 
+  useEffect(() => {
+    if (step !== 3 || !date) return;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    let cancelled = false;
+    async function loadAvailability() {
+      setAvailabilityLoading(true);
+      setAvailabilityError("");
+      setAvailableSlots([]);
+      setTime("");
+      if (!supabaseUrl || !publishableKey) {
+        setAvailabilityError("Η σύνδεση με το σύστημα διαθεσιμότητας δεν έχει ρυθμιστεί ακόμη.");
+        setAvailabilityLoading(false);
+        return;
+      }
+      try {
+        const supabase = createClient(supabaseUrl, publishableKey);
+        const { data, error } = await supabase.rpc("get_available_slots", { p_date: date });
+        if (error) throw error;
+        if (cancelled) return;
+        const slots = (data ?? []) as AvailableSlot[];
+        setAvailableSlots(slots.map((slot) => slot.slot_time.slice(0, 5)));
+      } catch {
+        if (!cancelled) setAvailabilityError("Δεν ήταν δυνατή η φόρτωση των διαθέσιμων ωρών. Δοκίμασε ξανά.");
+      } finally {
+        if (!cancelled) setAvailabilityLoading(false);
+      }
+    }
+    void loadAvailability();
+    return () => { cancelled = true; };
+  }, [step, date]);
+
   const selectedService = services.find((service) => service.id === serviceId);
 
   function goBack() {
     setStep((current) => Math.max(1, current - 1));
+  }
+
+  async function handleDateChange(value: string) {
+    const requestId = ++dateCheckRequest.current;
+    setDateError("");
+    setTime("");
+    setAvailableSlots([]);
+    setAvailabilityError("");
+    setDate(value);
+    if (!value) { setDateChecking(false); return; }
+    if (today && value < today) {
+      setDate("");
+      setDateError("Επίλεξε τη σημερινή ημερομηνία ή κάποια μελλοντική.");
+      setDateChecking(false);
+      return;
+    }
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if (!supabaseUrl || !publishableKey) {
+      setDate("");
+      setDateError("Δεν ήταν δυνατός ο έλεγχος του ωραρίου. Δοκίμασε ξανά.");
+      setDateChecking(false);
+      return;
+    }
+    setDateChecking(true);
+    try {
+      const supabase = createClient(supabaseUrl, publishableKey);
+      const { data, error } = await supabase.from("business_hours").select("is_open").eq("weekday", getWeekday(value)).maybeSingle();
+      if (requestId !== dateCheckRequest.current) return;
+      if (error) throw error;
+      if (!data?.is_open) {
+        setDate("");
+        setDateError("Το κατάστημα είναι κλειστό αυτή την ημέρα. Επίλεξε άλλη ημερομηνία.");
+        return;
+      }
+      setDateError("");
+    } catch {
+      if (requestId === dateCheckRequest.current) {
+        setDate("");
+        setDateError("Δεν ήταν δυνατός ο έλεγχος του ωραρίου. Δοκίμασε ξανά.");
+      }
+    } finally {
+      if (requestId === dateCheckRequest.current) setDateChecking(false);
+    }
   }
 
   function updateCustomer(field: keyof CustomerDetails, value: string) {
@@ -226,15 +313,16 @@ export default function Home() {
                 type="date"
                 min={today || undefined}
                 value={date}
-                onChange={(event) => {
-                  setDate(event.target.value);
-                  setTime("");
-                }}
+                onChange={(event) => void handleDateChange(event.target.value)}
                 required
+                aria-describedby={dateError ? "date-error" : undefined}
+                aria-invalid={Boolean(dateError)}
               />
+              {dateChecking && <p className="mock-note" role="status">Έλεγχος ωραρίου…</p>}
+              {dateError && <p className="mock-note" id="date-error" role="alert">{dateError}</p>}
               <div className="button-row">
                 <button className="secondary-button" type="button" onClick={goBack}>Πίσω</button>
-                <button className="primary-button" type="button" disabled={!date || (today !== "" && date < today)} onClick={() => setStep(3)}>
+                <button className="primary-button" type="button" disabled={!date || dateChecking || Boolean(dateError) || (today !== "" && date < today)} onClick={() => setStep(3)}>
                   Συνέχεια <span aria-hidden="true">→</span>
                 </button>
               </div>
@@ -247,23 +335,31 @@ export default function Home() {
               <h2 id="time-heading">Διάλεξε την ώρα σου.</h2>
               <p className="section-copy">{formatBookingDate(date)} · Όλα τα ραντεβού έχουν διάρκεια 30 λεπτών.</p>
 
-              <div className="time-grid">
-                {timeSlots.map((slot) => (
-                  <button
-                    className={`time-option ${time === slot ? "selected" : ""}`}
-                    type="button"
-                    key={slot}
-                    onClick={() => setTime(slot)}
-                    aria-pressed={time === slot}
-                  >
-                    {slot}
-                  </button>
-                ))}
-              </div>
-              <p className="mock-note">Οι ώρες είναι ενδεικτικές και χρησιμοποιούν προσωρινά δεδομένα.</p>
+              {availabilityLoading ? (
+                <p className="mock-note" role="status">Έλεγχος διαθέσιμων ωρών…</p>
+              ) : availabilityError ? (
+                <div>
+                  <p className="mock-note" role="alert">{availabilityError}</p>
+                  <button className="secondary-button" type="button" onClick={() => setStep(2)}>Επίλεξε ξανά ημερομηνία</button>
+                </div>
+              ) : availableSlots.length > 0 ? (
+                <div className="time-grid">
+                  {availableSlots.map((slot) => (
+                    <button
+                      className={"time-option " + (time === slot ? "selected" : "")}
+                      type="button"
+                      key={slot}
+                      onClick={() => setTime(slot)}
+                      aria-pressed={time === slot}
+                    >{slot}</button>
+                  ))}
+                </div>
+              ) : (
+                <p className="mock-note" role="status">Δεν υπάρχουν διαθέσιμες ώρες για αυτή την ημέρα. Επίλεξε άλλη ημερομηνία ή επικοινώνησε με το κατάστημα.</p>
+              )}
               <div className="button-row">
                 <button className="secondary-button" type="button" onClick={goBack}>Πίσω</button>
-                <button className="primary-button" type="button" disabled={!time} onClick={() => setStep(4)}>
+                <button className="primary-button" type="button" disabled={!time || availabilityLoading || Boolean(availabilityError) || !availableSlots.includes(time)} onClick={() => setStep(4)}>
                   Συνέχεια <span aria-hidden="true">→</span>
                 </button>
               </div>
@@ -274,7 +370,7 @@ export default function Home() {
             <section aria-labelledby="details-heading">
               <div className="section-kicker">04 / ΣΤΟΙΧΕΙΑ</div>
               <h2 id="details-heading">Πώς σε λένε;</h2>
-              <p className="section-copy">Συμπλήρωσε τα στοιχεία σου για να δεις την επιβεβαίωση.</p>
+              <p className="section-copy">Συμπλήρωσε τα στοιχεία σου για να δεις τη δοκιμαστική σύνοψη.</p>
 
               <div className="summary-strip">
                 <div>
@@ -344,10 +440,9 @@ export default function Home() {
 
           {step === 5 && (
             <section className="confirmation" aria-labelledby="confirmation-heading">
-              <div className="success-icon" aria-hidden="true">✓</div>
-              <div className="section-kicker">05 / ΠΡΟΣΩΡΙΝΗ ΕΠΙΒΕΒΑΙΩΣΗ</div>
-              <h2 id="confirmation-heading">Όλα έτοιμα, {customer.name.split(" ")[0]}!</h2>
-              <p className="section-copy">Αυτή είναι μια δοκιμαστική σύνοψη των στοιχείων που επέλεξες.</p>
+              <div className="section-kicker">05 / ΔΟΚΙΜΑΣΤΙΚΗ ΣΥΝΟΨΗ</div>
+              <h2 id="confirmation-heading">Η δοκιμαστική επιλογή ολοκληρώθηκε.</h2>
+              <p className="section-copy">Αυτή είναι μόνο μια σύνοψη των στοιχείων που επέλεξες. Δεν έχει δημιουργηθεί ραντεβού.</p>
 
               <div className="confirmation-details">
                 <div><span>Υπηρεσία</span><strong>{selectedService?.name}</strong></div>
@@ -357,7 +452,7 @@ export default function Home() {
                 <div className="confirmation-total"><span>Κόστος υπηρεσίας</span><strong>{selectedService?.price} €</strong></div>
               </div>
 
-              <p className="demo-disclaimer">Δεν δημιουργήθηκε πραγματικό ραντεβού. Δεν έχει αποθηκευτεί κανένα στοιχείο.</p>
+              <p className="demo-disclaimer">Δεν δημιουργήθηκε πραγματικό ραντεβού. Τα στοιχεία σου δεν αποθηκεύτηκαν και δεν έχει δεσμευτεί η επιλεγμένη ώρα.</p>
               <button
                 className="primary-button"
                 type="button"
@@ -365,7 +460,9 @@ export default function Home() {
                   setStep(1);
                   setServiceId("");
                   setDate("");
+                  setDateError("");
                   setTime("");
+                  setAvailableSlots([]);
                   setCustomer({ name: "", phone: "", email: "" });
                 }}
               >
