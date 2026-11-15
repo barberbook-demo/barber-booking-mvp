@@ -91,6 +91,8 @@ export default function AdminPage() {
     if (!authReady || !supabase) return;
     if (!userId) {
       setAuthState("signed_out");
+      setActiveTab("appointments");
+      setManagementTab("services");
       setServices([]);
       setHours(EMPTY_HOURS);
       return;
