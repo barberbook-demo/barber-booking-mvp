@@ -486,6 +486,10 @@ export default function AdminPage() {
         setDataError("Για κάθε ανοιχτή ημέρα, η ώρα λήξης πρέπει να είναι μετά την ώρα έναρξης.");
         return;
       }
+      if (!["00", "30"].includes(day.opens_at.slice(3, 5))) {
+        setDataError("Η ώρα έναρξης του κουρέα πρέπει να είναι ακριβώς στην ώρα ή στο μισάωρο.");
+        return;
+      }
       if (Boolean(day.break_start) !== Boolean(day.break_end)) {
         setDataError("Συμπλήρωσε και τις δύο ώρες του διαλείμματος ή άφησέ τες κενές.");
         return;
