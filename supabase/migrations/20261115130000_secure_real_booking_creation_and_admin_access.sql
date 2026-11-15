@@ -46,7 +46,7 @@ begin
      or v_phone is null or pg_catalog.length(v_phone) > 30
      or pg_catalog.length(pg_catalog.regexp_replace(v_phone, '[^0-9]', '', 'g')) not between 7 and 15
      or v_email is null or pg_catalog.length(v_email) > 254
-     or v_email !~* '^[A-Z0-9.!#$%&''*+/=?^_\x60{|}~-]+@[A-Z0-9]([A-Z0-9-]{0,61}[A-Z0-9])?(\.[A-Z0-9]([A-Z0-9-]{0,61}[A-Z0-9])?)+$' then
+     or v_email !~* '^[A-Z0-9.!#$%&''*+/=?^_`{|}~-]+@[A-Z0-9]([A-Z0-9-]{0,61}[A-Z0-9])?(\.[A-Z0-9]([A-Z0-9-]{0,61}[A-Z0-9])?)+$' then
     raise exception using errcode = '22023', message = 'INVALID_CUSTOMER_DETAILS';
   end if;
 
