@@ -547,3 +547,25 @@ button:focus-visible, input:focus-visible, a:focus-visible {
   .admin-staff-add .admin-primary, .admin-staff-name-form .admin-primary { width: 100%; }
   .admin-staff-profile { align-items: flex-start; }
 }
+
+
+/* Customer-facing barber selection */
+.barber-choice-list { display: grid; gap: 10px; margin: 22px 0; }
+.barber-option {
+  display: flex; align-items: center; gap: 13px; width: 100%; min-height: 68px;
+  padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--ink); text-align: left; font: inherit; cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.barber-option:hover, .barber-option.is-selected { border-color: var(--accent); background: #f7f5f0; }
+.barber-option-photo {
+  display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px;
+  overflow: hidden; border-radius: 50%; background: #e9e6de; color: #625c50; font-weight: 700;
+}
+.barber-option-photo img { width: 100%; height: 100%; object-fit: cover; }
+.barber-option-any { font-size: 20px; }
+.barber-option-check {
+  display: grid; place-items: center; margin-left: auto; width: 22px; height: 22px;
+  border: 1px solid #d8d4cb; border-radius: 50%; color: var(--accent-dark); font-size: 13px; font-weight: 700;
+}
+.barber-option.is-selected .barber-option-check { border-color: var(--accent); background: #e9e4d8; }
