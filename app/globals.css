@@ -377,3 +377,70 @@ button:focus-visible, input:focus-visible, a:focus-visible {
   .admin-booking-actions { justify-content: stretch; }
   .admin-booking-actions button { width: 100%; }
 }
+
+
+/* Admin dashboard navigation */
+.admin-main-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  margin: 0 0 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ebe9e3;
+}
+.admin-main-tab {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.admin-main-tab.is-active {
+  border-color: rgba(30, 29, 25, .12);
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 2px 8px rgba(35, 31, 24, .07);
+}
+.admin-sub-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.admin-sub-tab {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.admin-sub-tab.is-active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+.admin-main-tab:focus-visible, .admin-sub-tab:focus-visible {
+  outline: 3px solid rgba(168, 110, 67, .38);
+  outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  .admin-main-tabs { gap: 4px; padding: 4px; }
+  .admin-main-tab { min-height: 44px; padding: 0 8px; font-size: 13px; }
+  .admin-sub-tabs { display: grid; grid-template-columns: 1fr; gap: 7px; }
+  .admin-sub-tab { width: 100%; text-align: left; }
+}
