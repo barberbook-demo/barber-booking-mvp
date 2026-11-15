@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { BlockedPeriod, BookingConflict } from "./types";
+import type { Barber, BlockedPeriod, BookingConflict } from "./types";
 
 type Props = {
   periods: BlockedPeriod[];
+  barbers: Barber[];
   conflicts: BookingConflict[];
   busy: boolean;
   today: string;
-  onCreate: (startsAt: string, endsAt: string, reason: string) => Promise<boolean>;
+  onCreate: (startsAt: string, endsAt: string, reason: string, barberId: string | null) => Promise<boolean>;
   onDelete: (period: BlockedPeriod) => void;
   onDismissConflicts: () => void;
   formatDate: (value: string) => string;
@@ -22,7 +23,7 @@ function nextLocalDate(value: string) {
 }
 
 export default function BlockedPeriodsTab({
-  periods, conflicts, busy, today, onCreate, onDelete, onDismissConflicts,
+  periods, barbers, conflicts, busy, today, onCreate, onDelete, onDismissConflicts,
   formatDate, formatTime,
 }: Props) {
   const [mode, setMode] = useState<"hours" | "days">("hours");
@@ -31,6 +32,7 @@ export default function BlockedPeriodsTab({
   const [startTime, setStartTime] = useState("10:00");
   const [endTime, setEndTime] = useState("11:00");
   const [reason, setReason] = useState("");
+  const [barberId, setBarberId] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,7 +41,7 @@ export default function BlockedPeriodsTab({
       ? `${nextLocalDate(endDate)}T00:00:00`
       : `${endDate}T${endTime}:00`;
     if (startsAt >= endsAt) return;
-    const saved = await onCreate(startsAt, endsAt, reason);
+    const saved = await onCreate(startsAt, endsAt, reason, barberId || null);
     if (saved) {
       setReason("");
       setStartDate(today);
@@ -54,13 +56,19 @@ export default function BlockedPeriodsTab({
           <div><p className="admin-eyebrow">03 / ΔΙΑΘΕΣΙΜΟΤΗΤΑ</p><h2 id="admin-blocked-heading">Αποκλεισμένες περίοδοι</h2></div>
           <span>{periods.length} καταχωρίσεις</span>
         </div>
-        <p className="admin-muted admin-hours-intro">Δέσμευσε ώρες, ολόκληρες ημέρες ή πολυήμερες απουσίες. Οι αποκλεισμοί αφαιρούνται αυτόματα από τις διαθέσιμες ώρες.</p>
+        <p className="admin-muted admin-hours-intro">Δέσμευσε ώρες, ολόκληρες ημέρες ή πολυήμερες απουσίες για όλο το κατάστημα ή για συγκεκριμένο κουρέα.</p>
 
         <form className="admin-block-form" onSubmit={submit}>
           <div className="admin-block-mode" role="group" aria-label="Τύπος αποκλεισμού">
             <button type="button" className={mode === "hours" ? "admin-filter is-active" : "admin-filter"} aria-pressed={mode === "hours"} onClick={() => setMode("hours")}>Συγκεκριμένες ώρες</button>
             <button type="button" className={mode === "days" ? "admin-filter is-active" : "admin-filter"} aria-pressed={mode === "days"} onClick={() => setMode("days")}>Ολόκληρες ημέρες</button>
           </div>
+          <label className="admin-block-scope">Εφαρμογή αποκλεισμού
+            <select value={barberId} onChange={(event) => setBarberId(event.target.value)}>
+              <option value="">Όλο το κατάστημα</option>
+              {barbers.map((barber) => <option key={barber.id} value={barber.id}>{barber.name}{barber.is_active ? "" : " (ανενεργός)"}</option>)}
+            </select>
+          </label>
 
           <div className="admin-block-fields">
             <label>Από ημερομηνία
@@ -85,7 +93,7 @@ export default function BlockedPeriodsTab({
           {mode === "days" && <p className="admin-muted admin-block-hint">Η ημερομηνία λήξης συμπεριλαμβάνεται ολόκληρη. Η ζώνη ώρας είναι Europe/Athens.</p>}
           {mode === "hours" && startDate === endDate && startTime >= endTime && <p className="admin-error" role="alert">Η ώρα λήξης πρέπει να είναι μετά την ώρα έναρξης.</p>}
           <div className="admin-hours-footer">
-            <p className="admin-muted">Αν υπάρχουν επιβεβαιωμένα ραντεβού στο διάστημα, θα εμφανιστούν για διευθέτηση και ο αποκλεισμός δεν θα αποθηκευτεί.</p>
+            <p className="admin-muted">Αν υπάρχουν επιβεβαιωμένα ραντεβού στο διάστημα για το επιλεγμένο εύρος, θα εμφανιστούν και ο αποκλεισμός δεν θα αποθηκευτεί.</p>
             <button className="admin-primary" type="submit" disabled={busy || !startDate || !endDate || startDate > endDate || (mode === "hours" && startDate === endDate && startTime >= endTime)}>
               {busy ? "Έλεγχος…" : "Προσθήκη αποκλεισμού"}
             </button>
@@ -103,7 +111,7 @@ export default function BlockedPeriodsTab({
               {conflicts.map((booking) => (
                 <li key={booking.id}>
                   <strong>{booking.customer_name}</strong>
-                  <span>{booking.service_name ?? "Ραντεβού"} · {formatDate(booking.starts_at)} · {formatTime(booking.starts_at)}</span>
+                  <span>{booking.barber_name ? `${booking.barber_name} · ` : ""}{booking.service_name ?? "Ραντεβού"} · {formatDate(booking.starts_at)} · {formatTime(booking.starts_at)}</span>
                 </li>
               ))}
             </ul>
@@ -123,7 +131,7 @@ export default function BlockedPeriodsTab({
                 <div className="admin-block-summary">
                   <strong>{formatDate(period.starts_at)}</strong>
                   <span>{formatTime(period.starts_at)} – {formatDate(period.ends_at)} · {formatTime(period.ends_at)}</span>
-                  <small>{period.reason || "Χωρίς αιτιολογία"}</small>
+                  <small>{period.barber_id ? (period.barbers?.name ?? "Κουρέας") : "Όλο το κατάστημα"} · {period.reason || "Χωρίς αιτιολογία"}</small>
                 </div>
                 <button type="button" className="admin-secondary" disabled={busy} onClick={() => onDelete(period)}>Αφαίρεση αποκλεισμού</button>
               </article>
