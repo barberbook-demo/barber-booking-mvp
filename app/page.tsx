@@ -68,6 +68,9 @@ export default function Home() {
     phone: "",
     email: "",
   });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [bookingId, setBookingId] = useState("");
 
   useEffect(() => {
     setToday(getAthensToday());
@@ -207,9 +210,53 @@ export default function Home() {
     setCustomer((current) => ({ ...current, [field]: value }));
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStep(5);
+    if (!selectedService || !date || !time || !availableSlots.includes(time)) {
+      setSubmitError("Η επιλογή σου δεν είναι πλέον έγκυρη. Έλεγξε ξανά την ημερομηνία και την ώρα.");
+      return;
+    }
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if (!supabaseUrl || !publishableKey) {
+      setSubmitError("Δεν είναι διαθέσιμη αυτή τη στιγμή η υπηρεσία κρατήσεων. Δοκίμασε ξανά αργότερα.");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      const supabase = createClient(supabaseUrl, publishableKey);
+      const { data, error } = await supabase.rpc("create_booking", {
+        p_service_id: selectedService.id,
+        p_date: date,
+        p_time: time,
+        p_customer_name: customer.name.trim(),
+        p_customer_phone: customer.phone.trim(),
+        p_customer_email: customer.email.trim(),
+      });
+      if (error) {
+        const message = error.message ?? "";
+        if (message.includes("SLOT_UNAVAILABLE") || message.includes("bookings_one_confirmed_per_slot")) {
+          setSubmitError("Η ώρα μόλις δεσμεύτηκε από άλλον πελάτη. Επίλεξε μία από τις νέες διαθέσιμες ώρες.");
+        } else if (message.includes("SERVICE_UNAVAILABLE")) {
+          setSubmitError("Η υπηρεσία δεν είναι πλέον διαθέσιμη. Επίλεξε ξανά υπηρεσία.");
+        } else {
+          setSubmitError("Δεν ήταν δυνατή η ολοκλήρωση της κράτησης. Έλεγξε τα στοιχεία σου και δοκίμασε ξανά.");
+        }
+        return;
+      }
+      const created = Array.isArray(data) ? data[0] : data;
+      if (!created?.booking_id) {
+        setSubmitError("Δεν λάβαμε επιβεβαίωση αποθήκευσης. Έλεγξε ξανά πριν επαναλάβεις την προσπάθεια.");
+        return;
+      }
+      setBookingId(created.booking_id);
+      setStep(5);
+    } catch {
+      setSubmitError("Παρουσιάστηκε προσωρινό πρόβλημα. Η κράτηση δεν επιβεβαιώθηκε· δοκίμασε ξανά.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -370,7 +417,7 @@ export default function Home() {
             <section aria-labelledby="details-heading">
               <div className="section-kicker">04 / ΣΤΟΙΧΕΙΑ</div>
               <h2 id="details-heading">Πώς σε λένε;</h2>
-              <p className="section-copy">Συμπλήρωσε τα στοιχεία σου για να δεις τη δοκιμαστική σύνοψη.</p>
+              <p className="section-copy">Συμπλήρωσε τα στοιχεία σου και επιβεβαίωσε το ραντεβού σου.</p>
 
               <div className="summary-strip">
                 <div>
@@ -398,6 +445,7 @@ export default function Home() {
                     placeholder="π.χ. Γιώργος Παπαδόπουλος"
                     value={customer.name}
                     onChange={(event) => updateCustomer("name", event.target.value)}
+                    maxLength={120}
                     required
                   />
                 </div>
@@ -411,6 +459,7 @@ export default function Home() {
                     placeholder="π.χ. 6912345678"
                     value={customer.phone}
                     onChange={(event) => updateCustomer("phone", event.target.value)}
+                    maxLength={30}
                     required
                   />
                 </div>
@@ -424,14 +473,16 @@ export default function Home() {
                     placeholder="π.χ. name@email.com"
                     value={customer.email}
                     onChange={(event) => updateCustomer("email", event.target.value)}
+                    maxLength={254}
                     required
                   />
                 </div>
-                <p className="mock-note">Τα στοιχεία σου δεν αποστέλλονται ούτε αποθηκεύονται.</p>
+                <p className="mock-note">Τα στοιχεία σου αποθηκεύονται με ασφάλεια για τη διαχείριση του ραντεβού.</p>
+                {submitError && <p className="admin-error" role="alert">{submitError}</p>}
                 <div className="button-row">
                   <button className="secondary-button" type="button" onClick={goBack}>Πίσω</button>
-                  <button className="primary-button" type="submit">
-                    Συνέχεια <span aria-hidden="true">→</span>
+                  <button className="primary-button" type="submit" disabled={submitting || !selectedService || !date || !time}>
+                    {submitting ? "Αποθήκευση…" : "Επιβεβαίωση κράτησης"}
                   </button>
                 </div>
               </form>
@@ -440,24 +491,27 @@ export default function Home() {
 
           {step === 5 && (
             <section className="confirmation" aria-labelledby="confirmation-heading">
-              <div className="section-kicker">05 / ΔΟΚΙΜΑΣΤΙΚΗ ΣΥΝΟΨΗ</div>
-              <h2 id="confirmation-heading">Η δοκιμαστική επιλογή ολοκληρώθηκε.</h2>
-              <p className="section-copy">Αυτή είναι μόνο μια σύνοψη των στοιχείων που επέλεξες. Δεν έχει δημιουργηθεί ραντεβού.</p>
+              <div className="section-kicker">05 / ΕΠΙΒΕΒΑΙΩΣΗ</div>
+              <h2 id="confirmation-heading">Το ραντεβού σου καταχωρήθηκε!</h2>
+              <p className="section-copy">Η κράτησή σου αποθηκεύτηκε επιτυχώς στο BarberBook.</p>
 
               <div className="confirmation-details">
                 <div><span>Υπηρεσία</span><strong>{selectedService?.name}</strong></div>
                 <div><span>Ημερομηνία</span><strong>{formatBookingDate(date)}</strong></div>
                 <div><span>Ώρα</span><strong>{time}</strong></div>
                 <div><span>Όνομα πελάτη</span><strong>{customer.name}</strong></div>
+                <div><span>Κωδικός κράτησης</span><strong>{bookingId.slice(0, 8).toUpperCase()}</strong></div>
                 <div className="confirmation-total"><span>Κόστος υπηρεσίας</span><strong>{selectedService?.price} €</strong></div>
               </div>
 
-              <p className="demo-disclaimer">Δεν δημιουργήθηκε πραγματικό ραντεβού. Τα στοιχεία σου δεν αποθηκεύτηκαν και δεν έχει δεσμευτεί η επιλεγμένη ώρα.</p>
+              <p className="demo-disclaimer">Η ώρα σου έχει δεσμευτεί. Αν χρειαστείς αλλαγή ή ακύρωση, επικοινώνησε με το κατάστημα.</p>
               <button
                 className="primary-button"
                 type="button"
                 onClick={() => {
                   setStep(1);
+                  setBookingId("");
+                  setSubmitError("");
                   setServiceId("");
                   setDate("");
                   setDateError("");
@@ -466,7 +520,7 @@ export default function Home() {
                   setCustomer({ name: "", phone: "", email: "" });
                 }}
               >
-                Νέα δοκιμαστική κράτηση
+                Νέα κράτηση
               </button>
             </section>
           )}
