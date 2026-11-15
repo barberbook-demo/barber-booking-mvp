@@ -226,10 +226,6 @@ export default function AdminPage() {
     setHours((current) => current.map((day) => {
       if (day.weekday !== weekday) return day;
       const next = { ...day, ...changes };
-      if (changes.is_open === true && !day.is_open) {
-        next.opens_at = day.opens_at ?? "09:00";
-        next.closes_at = day.closes_at ?? "17:00";
-      }
       return next;
     }));
   }
