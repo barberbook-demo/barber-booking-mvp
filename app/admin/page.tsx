@@ -2,29 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import BookingsTab from "./components/BookingsTab";
+import ServicesTab from "./components/ServicesTab";
+import HoursTab from "./components/HoursTab";
+import type { Booking, BookingFilter, BusinessDay, Service } from "./components/types";
 
-type Service = { id: string; name: string; price: number; active: boolean };
-type Booking = { id: string; service_id: string; customer_name: string; customer_phone: string; customer_email: string; starts_at: string; status: "confirmed" | "cancelled"; services: { name: string } | null };
-type BookingFilter = "all" | "today" | "upcoming" | "date";
-type BusinessDay = {
-  weekday: number;
-  is_open: boolean;
-  opens_at: string | null;
-  closes_at: string | null;
-  break_start: string | null;
-  break_end: string | null;
-};
 type AuthState = "loading" | "signed_out" | "checking" | "authorized" | "unauthorized" | "error";
-
-const WEEKDAYS = [
-  { value: 1, label: "Δευτέρα" },
-  { value: 2, label: "Τρίτη" },
-  { value: 3, label: "Τετάρτη" },
-  { value: 4, label: "Πέμπτη" },
-  { value: 5, label: "Παρασκευή" },
-  { value: 6, label: "Σάββατο" },
-  { value: 0, label: "Κυριακή" },
-];
 
 const EMPTY_HOURS: BusinessDay[] = Array.from({ length: 7 }, (_, weekday) => ({
   weekday,
@@ -71,6 +54,8 @@ export default function AdminPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
   const [bookingDate, setBookingDate] = useState(athensDate(new Date()));
+  const [activeTab, setActiveTab] = useState<"appointments" | "management">("appointments");
+  const [managementTab, setManagementTab] = useState<"services" | "hours">("services");
   const [newName, setNewName] = useState("");
   const [newPrice, setNewPrice] = useState("15");
 
@@ -398,120 +383,54 @@ export default function AdminPage() {
             {dataError && <p className="admin-error admin-alert" role="alert">{dataError}</p>}
             {notice && <p className="admin-success admin-alert" role="status">{notice}</p>}
 
-            <section className="admin-panel">
-              <div className="admin-section-heading">
-                <div><p className="admin-eyebrow">01 / ΡΑΝΤΕΒΟΥ</p><h2>Ραντεβού πελατών</h2></div>
-                <span>{bookings.length} συνολικά</span>
-              </div>
-              <div className="admin-booking-filters" role="group" aria-label="Φίλτρο ραντεβού">
-                <button type="button" className={bookingFilter === "all" ? "admin-filter is-active" : "admin-filter"} onClick={() => setBookingFilter("all")}>Όλα</button>
-                <button type="button" className={bookingFilter === "today" ? "admin-filter is-active" : "admin-filter"} onClick={() => setBookingFilter("today")}>Σήμερα</button>
-                <button type="button" className={bookingFilter === "upcoming" ? "admin-filter is-active" : "admin-filter"} onClick={() => setBookingFilter("upcoming")}>Επερχόμενα</button>
-                <button type="button" className={bookingFilter === "date" ? "admin-filter is-active" : "admin-filter"} onClick={() => setBookingFilter("date")}>Ημερομηνία</button>
-                {bookingFilter === "date" && <input aria-label="Επιλογή ημερομηνίας" type="date" value={bookingDate} onChange={(event) => setBookingDate(event.target.value)} />}
-              </div>
-              {visibleBookings.length === 0 ? <p className="admin-muted">Δεν βρέθηκαν ραντεβού για αυτή την επιλογή.</p> : (
-                <div className="admin-booking-list">
-                  {visibleBookings.map((booking) => (
-                    <article className="admin-booking-row" key={booking.id}>
-                      <div className="admin-booking-topline">
-                        <div>
-                          <strong>{booking.customer_name}</strong>
-                          <span className={booking.status === "confirmed" ? "admin-booking-status is-confirmed" : "admin-booking-status is-cancelled"}>{booking.status === "confirmed" ? "Επιβεβαιωμένο" : "Ακυρωμένο"}</span>
-                        </div>
-                        <div className="admin-booking-when"><strong>{formatAdminDate(booking.starts_at)}</strong><span>{formatAdminTime(booking.starts_at)}</span></div>
-                      </div>
-                      <div className="admin-booking-meta">
-                        <span><b>Υπηρεσία</b>{booking.services?.name ?? "Μη διαθέσιμη υπηρεσία"}</span>
-                        <span><b>Τηλέφωνο</b><a href={`tel:${booking.customer_phone}`}>{booking.customer_phone}</a></span>
-                        <span><b>Email</b><a href={`mailto:${booking.customer_email}`}>{booking.customer_email}</a></span>
-                      </div>
-                      {booking.status === "confirmed" && <div className="admin-booking-actions"><button className="admin-secondary" type="button" onClick={() => void cancelBooking(booking)} disabled={busy}>Ακύρωση ραντεβού</button></div>}
-                    </article>
-                  ))}
-                </div>
-              )}
-              <p className="admin-muted admin-booking-footnote">Οι ακυρωμένες κρατήσεις παραμένουν στο ιστορικό. Οι αλλαγές ενημερώνονται αυτόματα.</p>
-            </section>
+            <nav className="admin-main-tabs" aria-label="Κύριες ενότητες">
+              <button type="button" className={activeTab === "appointments" ? "admin-main-tab is-active" : "admin-main-tab"} aria-current={activeTab === "appointments" ? "page" : undefined} onClick={() => setActiveTab("appointments")}>Ραντεβού</button>
+              <button type="button" className={activeTab === "management" ? "admin-main-tab is-active" : "admin-main-tab"} aria-current={activeTab === "management" ? "page" : undefined} onClick={() => setActiveTab("management")}>Διαχείριση</button>
+            </nav>
 
-            <section className="admin-panel">
-              <div className="admin-section-heading">
-                <div><p className="admin-eyebrow">02 / ΚΑΤΑΛΟΓΟΣ</p><h2>Υπηρεσίες και τιμές</h2></div>
-                <span>{services.length} υπηρεσίες</span>
-              </div>
-              <div className="admin-service-list">
-                {services.map((service) => (
-                  <div className="admin-service-row" key={service.id}>
-                    <div className="admin-service-fields">
-                      <label>Ονομασία
-                        <input value={service.name} onChange={(event) => setServices((current) => current.map((item) => item.id === service.id ? { ...item, name: event.target.value } : item))} />
-                      </label>
-                      <label>Τιμή (€)
-                        <input type="number" min="0" step="0.01" value={service.price} onChange={(event) => setServices((current) => current.map((item) => item.id === service.id ? { ...item, price: Number(event.target.value) } : item))} />
-                      </label>
-                    </div>
-                    <div className="admin-service-actions">
-                      <span className={service.active ? "admin-status is-active" : "admin-status"}>{service.active ? "Ενεργή" : "Ανενεργή"}</span>
-                      <button className="admin-secondary" type="button" onClick={() => saveService(service)} disabled={busy}>Αποθήκευση</button>
-                      <button className="admin-link-button" type="button" onClick={() => toggleService(service)} disabled={busy}>{service.active ? "Απενεργοποίηση" : "Ενεργοποίηση"}</button>
-                    </div>
-                  </div>
-                ))}
-                {services.length === 0 && <p className="admin-muted">Δεν έχουν προστεθεί υπηρεσίες.</p>}
-              </div>
+            {activeTab === "appointments" ? (
+              <BookingsTab
+                bookings={bookings}
+                visibleBookings={visibleBookings}
+                bookingFilter={bookingFilter}
+                bookingDate={bookingDate}
+                busy={busy}
+                onFilterChange={setBookingFilter}
+                onDateChange={setBookingDate}
+                onCancel={(booking) => void cancelBooking(booking)}
+                formatDate={formatAdminDate}
+                formatTime={formatAdminTime}
+              />
+            ) : (
+              <>
+                <nav className="admin-sub-tabs" aria-label="Ρυθμίσεις καταστήματος">
+                  <button type="button" className={managementTab === "services" ? "admin-sub-tab is-active" : "admin-sub-tab"} aria-current={managementTab === "services" ? "page" : undefined} onClick={() => setManagementTab("services")}>Υπηρεσίες &amp; Τιμές</button>
+                  <button type="button" className={managementTab === "hours" ? "admin-sub-tab is-active" : "admin-sub-tab"} aria-current={managementTab === "hours" ? "page" : undefined} onClick={() => setManagementTab("hours")}>Εβδομαδιαίο Ωράριο</button>
+                </nav>
+                {managementTab === "services" ? (
+                  <ServicesTab
+                    services={services}
+                    newName={newName}
+                    newPrice={newPrice}
+                    busy={busy}
+                    onServiceChange={(service) => setServices((current) => current.map((item) => item.id === service.id ? service : item))}
+                    onAdd={addService}
+                    onNewNameChange={setNewName}
+                    onNewPriceChange={setNewPrice}
+                    onSave={(service) => void saveService(service)}
+                    onToggle={(service) => void toggleService(service)}
+                  />
+                ) : (
+                  <HoursTab
+                    hours={hours}
+                    busy={busy}
+                    onDayChange={updateDay}
+                    onSave={saveHours}
+                  />
+                )}
+              </>
+            )}
 
-              <form className="admin-add-service" onSubmit={addService}>
-                <h3>Προσθήκη υπηρεσίας</h3>
-                <div className="admin-add-fields">
-                  <label>Ονομασία
-                    <input value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="π.χ. Ανδρικό κούρεμα" required />
-                  </label>
-                  <label>Τιμή (€)
-                    <input type="number" min="0" step="0.01" value={newPrice} onChange={(event) => setNewPrice(event.target.value)} required />
-                  </label>
-                  <button className="admin-primary" type="submit" disabled={busy}>Προσθήκη</button>
-                </div>
-              </form>
-            </section>
-
-            <section className="admin-panel">
-              <div className="admin-section-heading">
-                <div><p className="admin-eyebrow">03 / ΠΡΟΓΡΑΜΜΑ</p><h2>Εβδομαδιαίο ωράριο</h2></div>
-                <span>Ώρα Ελλάδας · Europe/Athens</span>
-              </div>
-              <p className="admin-muted admin-hours-intro">Επίλεξε τις ημέρες λειτουργίας, τις ώρες έναρξης και λήξης και, αν χρειάζεται, ένα διάλειμμα.</p>
-              <form onSubmit={saveHours}>
-                <div className="admin-hours-list">
-                  {WEEKDAYS.map((weekday) => {
-                    const day = hours.find((item) => item.weekday === weekday.value) ?? EMPTY_HOURS[weekday.value];
-                    return (
-                      <div className={day.is_open ? "admin-day-row is-open" : "admin-day-row"} key={weekday.value}>
-                        <div className="admin-day-toggle">
-                          <label className="admin-switch">
-                            <input type="checkbox" checked={day.is_open} onChange={(event) => updateDay(weekday.value, { is_open: event.target.checked })} />
-                            <span aria-hidden="true" />
-                          </label>
-                          <strong>{weekday.label}</strong>
-                        </div>
-                        {day.is_open ? (
-                          <div className="admin-day-times">
-                            <label>Από<input type="time" value={day.opens_at ?? ""} onChange={(event) => updateDay(weekday.value, { opens_at: event.target.value })} required /></label>
-                            <label>Έως<input type="time" value={day.closes_at ?? ""} onChange={(event) => updateDay(weekday.value, { closes_at: event.target.value })} required /></label>
-                            <label>Διάλειμμα από<input type="time" value={day.break_start ?? ""} onChange={(event) => updateDay(weekday.value, { break_start: event.target.value || null })} /></label>
-                            <label>Διάλειμμα έως<input type="time" value={day.break_end ?? ""} onChange={(event) => updateDay(weekday.value, { break_end: event.target.value || null })} /></label>
-                          </div>
-                        ) : <span className="admin-closed-label">Κλειστά</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="admin-hours-footer">
-                  <p className="admin-muted">Το ωράριο αποθηκεύεται για κάθε ημέρα ξεχωριστά.</p>
-                  <button className="admin-primary" type="submit" disabled={busy}>{busy ? "Αποθήκευση…" : "Αποθήκευση ωραρίου"}</button>
-                </div>
-              </form>
-            </section>
-            <p className="admin-footer-note">Το ωράριο και οι υπηρεσίες χρησιμοποιούνται απευθείας στη δημόσια διαδικασία κρατήσεων.</p>
           </>
         )}
       </div>
