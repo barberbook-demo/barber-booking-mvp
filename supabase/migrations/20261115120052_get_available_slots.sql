@@ -1,9 +1,8 @@
--- Return only free 30-minute local appointment times for one date.
--- The SECURITY DEFINER boundary is intentionally narrow: the function reads
--- private booking data internally but never returns booking/customer records.
--- Direct SELECT access and all existing RLS policies remain unchanged.
+-- Create a narrow server-side availability calculation.
+-- The privileged implementation stays in the unexposed private schema.
+-- The public RPC is SECURITY INVOKER and returns only free local times.
 
-create or replace function public.get_available_slots(p_date date)
+create or replace function private.get_available_slots(p_date date)
 returns table(slot_time time without time zone)
 language sql
 stable
@@ -32,30 +31,36 @@ as $function$
   select c.local_start::time as slot_time
   from candidate_slots as c
   where c.starts_at > pg_catalog.now()
-    -- Exclude nonexistent local times during the spring DST transition.
     and (c.starts_at at time zone 'Europe/Athens') = c.local_start
-    -- Breaks and appointments use half-open interval overlap checks.
     and not (
       c.break_start is not null
       and c.local_start < p_date::timestamp + c.break_end
       and c.local_start + interval '30 minutes' > p_date::timestamp + c.break_start
     )
     and not exists (
-      select 1
-      from public.bookings as b
+      select 1 from public.bookings as b
       where b.status = 'confirmed'
         and b.starts_at < c.starts_at + interval '30 minutes'
         and b.starts_at + interval '30 minutes' > c.starts_at
     )
     and not exists (
-      select 1
-      from public.blocked_periods as bp
+      select 1 from public.blocked_periods as bp
       where bp.starts_at < c.starts_at + interval '30 minutes'
         and bp.ends_at > c.starts_at
     )
   order by c.local_start;
 $function$;
 
-revoke all on function public.get_available_slots(date) from public;
-revoke all on function public.get_available_slots(date) from anon, authenticated;
-grant execute on function public.get_available_slots(date) to anon, authenticated;
+create or replace function public.get_available_slots(p_date date)
+returns table(slot_time time without time zone)
+language sql
+stable
+security invoker
+set search_path = ''
+as $function$
+  select slots.slot_time
+  from private.get_available_slots(p_date) as slots;
+$function$;
+
+revoke all on function private.get_available_slots(date) from public, anon, authenticated;
+revoke all on function public.get_available_slots(date) from public, anon, authenticated;
