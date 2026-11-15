@@ -10,6 +10,7 @@ type Service = {
   active: boolean;
 };
 
+type Barber = { id: string; name: string; photo_path: string | null; photo_url: string | null };
 type AvailableSlot = { slot_time: string };
 
 type CustomerDetails = {
@@ -54,6 +55,10 @@ export default function Home() {
   const [servicesLoading, setServicesLoading] = useState(true);
   const [servicesError, setServicesError] = useState("");
   const [servicesRetry, setServicesRetry] = useState(0);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [barbersLoading, setBarbersLoading] = useState(true);
+  const [barberId, setBarberId] = useState<string | null>(null);
+  const [assignedBarberName, setAssignedBarberName] = useState("");
   const [serviceId, setServiceId] = useState<string>("");
   const [date, setDate] = useState("");
   const [dateChecking, setDateChecking] = useState(false);
@@ -83,6 +88,7 @@ export default function Home() {
 
     async function loadServices() {
       setServicesLoading(true);
+      setBarbersLoading(true);
       setServicesError("");
 
       if (!supabaseUrl || !publishableKey) {
@@ -93,27 +99,26 @@ export default function Home() {
 
       try {
         const supabase = createClient(supabaseUrl, publishableKey);
-        const { data, error } = await supabase
-          .from("services")
-          .select("id, name, price, active")
-          .eq("active", true)
-          .order("name", { ascending: true });
-
-        if (error) throw error;
+        const [{ data: serviceData, error: serviceError }, { data: barberData, error: barberError }] = await Promise.all([
+          supabase.from("services").select("id, name, price, active").eq("active", true).order("name", { ascending: true }),
+          supabase.from("barbers").select("id, name, photo_path").eq("is_active", true).order("sort_order").order("created_at"),
+        ]);
+        if (serviceError) throw serviceError;
+        if (barberError) throw barberError;
         if (cancelled) return;
-
-        setServices(
-          (data ?? []).map((service) => ({
-            ...service,
-            price: Number(service.price),
-          })),
-        );
+        setServices((serviceData ?? []).map((service) => ({ ...service, price: Number(service.price) })));
+        const loadedBarbers = (barberData ?? []).map((barber) => ({
+          ...barber,
+          photo_url: barber.photo_path ? supabase.storage.from("barber-photos").getPublicUrl(barber.photo_path).data.publicUrl : null,
+        }));
+        setBarbers(loadedBarbers);
+        setBarberId(loadedBarbers.length === 1 ? loadedBarbers[0].id : null);
       } catch {
         if (!cancelled) {
-          setServicesError("Δεν ήταν δυνατή η φόρτωση των υπηρεσιών. Έλεγξε τη σύνδεση και δοκίμασε ξανά.");
+          setServicesError("Δεν ήταν δυνατή η φόρτωση των υπηρεσιών και των κουρέων. Έλεγξε τη σύνδεση και δοκίμασε ξανά.");
         }
       } finally {
-        if (!cancelled) setServicesLoading(false);
+        if (!cancelled) { setServicesLoading(false); setBarbersLoading(false); }
       }
     }
 
@@ -125,7 +130,7 @@ export default function Home() {
   }, [servicesRetry]);
 
   useEffect(() => {
-    if (step !== 3 || !date) return;
+    if (step !== 4 || !date) return;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     let cancelled = false;
@@ -141,7 +146,7 @@ export default function Home() {
       }
       try {
         const supabase = createClient(supabaseUrl, publishableKey);
-        const { data, error } = await supabase.rpc("get_available_slots", { p_date: date });
+        const { data, error } = await supabase.rpc("get_available_slots", { p_date: date, p_barber_id: barberId });
         if (error) throw error;
         if (cancelled) return;
         const slots = (data ?? []) as AvailableSlot[];
@@ -154,12 +159,13 @@ export default function Home() {
     }
     void loadAvailability();
     return () => { cancelled = true; };
-  }, [step, date]);
+  }, [step, date, barberId]);
 
   const selectedService = services.find((service) => service.id === serviceId);
+  const selectedBarber = barbers.find((barber) => barber.id === barberId);
 
   function goBack() {
-    setStep((current) => Math.max(1, current - 1));
+    setStep((current) => current === 3 && barbers.length === 1 ? 1 : Math.max(1, current - 1));
   }
 
   async function handleDateChange(value: string) {
@@ -233,11 +239,14 @@ export default function Home() {
         p_customer_name: customer.name.trim(),
         p_customer_phone: customer.phone.trim(),
         p_customer_email: customer.email.trim(),
+        p_barber_id: barberId,
       });
       if (error) {
         const message = error.message ?? "";
         if (message.includes("SLOT_UNAVAILABLE") || message.includes("bookings_one_confirmed_per_slot")) {
           setSubmitError("Η ώρα μόλις δεσμεύτηκε από άλλον πελάτη. Επίλεξε μία από τις νέες διαθέσιμες ώρες.");
+        } else if (message.includes("BARBER_UNAVAILABLE")) {
+          setSubmitError("Ο κουρέας δεν είναι πλέον διαθέσιμος. Επίλεξε ξανά κουρέα ή «Δεν έχω προτίμηση».");
         } else if (message.includes("SERVICE_UNAVAILABLE")) {
           setSubmitError("Η υπηρεσία δεν είναι πλέον διαθέσιμη. Επίλεξε ξανά υπηρεσία.");
         } else {
@@ -251,7 +260,8 @@ export default function Home() {
         return;
       }
       setBookingId(created.booking_id);
-      setStep(5);
+      setAssignedBarberName(barbers.find((barber) => barber.id === created.barber_id)?.name ?? "Κουρέας");
+      setStep(6);
     } catch {
       setSubmitError("Παρουσιάστηκε προσωρινό πρόβλημα. Η κράτηση δεν επιβεβαιώθηκε· δοκίμασε ξανά.");
     } finally {
@@ -276,20 +286,21 @@ export default function Home() {
           <p className="intro-copy">Επίλεξε υπηρεσία, ημέρα και ώρα. Είναι απλό και γρήγορο.</p>
         </div>
 
-        {step < 5 && (
-          <div className="progress-wrap" aria-label={`Βήμα ${step} από 4`}>
+        {step < 6 && (
+          <div className="progress-wrap" aria-label={`Βήμα ${step} από 5`}>
             <div className="progress-label">
-              <span>Βήμα {step} από 4</span>
-              <span>{Math.round((step / 4) * 100)}%</span>
+              <span>Βήμα {step} από 5</span>
+              <span>{Math.round((step / 5) * 100)}%</span>
             </div>
             <div className="progress-track">
-              <div className="progress-value" style={{ width: `${(step / 4) * 100}%` }} />
+              <div className="progress-value" style={{ width: `${(step / 5) * 100}%` }} />
             </div>
             <div className="step-labels">
               <span className={step >= 1 ? "current" : ""}>Υπηρεσία</span>
-              <span className={step >= 2 ? "current" : ""}>Ημερομηνία</span>
-              <span className={step >= 3 ? "current" : ""}>Ώρα</span>
-              <span className={step >= 4 ? "current" : ""}>Στοιχεία</span>
+              <span className={step >= 2 ? "current" : ""}>Κουρέας</span>
+              <span className={step >= 3 ? "current" : ""}>Ημερομηνία</span>
+              <span className={step >= 4 ? "current" : ""}>Ώρα</span>
+              <span className={step >= 5 ? "current" : ""}>Στοιχεία</span>
             </div>
           </div>
         )}
@@ -339,8 +350,8 @@ export default function Home() {
               <button
                 className="primary-button"
                 type="button"
-                disabled={servicesLoading || Boolean(servicesError) || services.length === 0 || !serviceId}
-                onClick={() => setStep(2)}
+                disabled={servicesLoading || barbersLoading || Boolean(servicesError) || services.length === 0 || barbers.length === 0 || !serviceId}
+                onClick={() => setStep(barbers.length > 1 ? 2 : 3)}
               >
                 Συνέχεια <span aria-hidden="true">→</span>
               </button>
@@ -348,8 +359,34 @@ export default function Home() {
           )}
 
           {step === 2 && (
+            <section aria-labelledby="barber-heading">
+              <div className="section-kicker">02 / ΚΟΥΡΕΑΣ</div>
+              <h2 id="barber-heading">Έχεις κάποια προτίμηση;</h2>
+              <p className="section-copy">Επίλεξε τον κουρέα σου ή άφησε το σύστημα να βρει τον πρώτο διαθέσιμο.</p>
+              <div className="barber-choice-list">
+                {barbers.map((barber) => (
+                  <button type="button" key={barber.id} className={barberId === barber.id ? "barber-option is-selected" : "barber-option"} aria-pressed={barberId === barber.id} onClick={() => setBarberId(barber.id)}>
+                    <span className="barber-option-photo">{barber.photo_url ? <img src={barber.photo_url} alt="" /> : barber.name.slice(0, 1).toUpperCase()}</span>
+                    <span>{barber.name}</span>
+                    <span className="barber-option-check" aria-hidden="true">{barberId === barber.id ? "✓" : ""}</span>
+                  </button>
+                ))}
+                <button type="button" className={barberId === null ? "barber-option is-selected" : "barber-option"} aria-pressed={barberId === null} onClick={() => setBarberId(null)}>
+                  <span className="barber-option-photo barber-option-any">✦</span>
+                  <span>Δεν έχω προτίμηση</span>
+                  <span className="barber-option-check" aria-hidden="true">{barberId === null ? "✓" : ""}</span>
+                </button>
+              </div>
+              <div className="button-row">
+                <button className="secondary-button" type="button" onClick={goBack}>Πίσω</button>
+                <button className="primary-button" type="button" onClick={() => setStep(3)}>Συνέχεια <span aria-hidden="true">→</span></button>
+              </div>
+            </section>
+          )}
+
+          {step === 3 && (
             <section aria-labelledby="date-heading">
-              <div className="section-kicker">02 / ΗΜΕΡΟΜΗΝΙΑ</div>
+              <div className="section-kicker">03 / ΗΜΕΡΟΜΗΝΙΑ</div>
               <h2 id="date-heading">Ποια μέρα σε βολεύει;</h2>
               <p className="section-copy">Διάλεξε την ημέρα που θέλεις να επισκεφθείς το barber shop.</p>
 
@@ -376,9 +413,9 @@ export default function Home() {
             </section>
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <section aria-labelledby="time-heading">
-              <div className="section-kicker">03 / ΩΡΑ</div>
+              <div className="section-kicker">04 / ΩΡΑ</div>
               <h2 id="time-heading">Διάλεξε την ώρα σου.</h2>
               <p className="section-copy">{formatBookingDate(date)} · Όλα τα ραντεβού έχουν διάρκεια 30 λεπτών.</p>
 
@@ -413,9 +450,9 @@ export default function Home() {
             </section>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
             <section aria-labelledby="details-heading">
-              <div className="section-kicker">04 / ΣΤΟΙΧΕΙΑ</div>
+              <div className="section-kicker">05 / ΣΤΟΙΧΕΙΑ</div>
               <h2 id="details-heading">Πώς σε λένε;</h2>
               <p className="section-copy">Συμπλήρωσε τα στοιχεία σου και επιβεβαίωσε το ραντεβού σου.</p>
 
@@ -423,6 +460,10 @@ export default function Home() {
                 <div>
                   <span>ΕΠΙΛΟΓΗ</span>
                   <strong>{selectedService?.name}</strong>
+                </div>
+                <div>
+                  <span>ΚΟΥΡΕΑΣ</span>
+                  <strong>{selectedBarber?.name ?? "Χωρίς προτίμηση"}</strong>
                 </div>
                 <div>
                   <span>ΗΜΕΡΟΜΗΝΙΑ & ΩΡΑ</span>
@@ -489,9 +530,9 @@ export default function Home() {
             </section>
           )}
 
-          {step === 5 && (
+          {step === 6 && (
             <section className="confirmation" aria-labelledby="confirmation-heading">
-              <div className="section-kicker">05 / ΕΠΙΒΕΒΑΙΩΣΗ</div>
+              <div className="section-kicker">06 / ΕΠΙΒΕΒΑΙΩΣΗ</div>
               <h2 id="confirmation-heading">Το ραντεβού σου καταχωρήθηκε!</h2>
               <p className="section-copy">Η κράτησή σου αποθηκεύτηκε επιτυχώς στο BarberBook.</p>
 
@@ -499,6 +540,7 @@ export default function Home() {
                 <div><span>Υπηρεσία</span><strong>{selectedService?.name}</strong></div>
                 <div><span>Ημερομηνία</span><strong>{formatBookingDate(date)}</strong></div>
                 <div><span>Ώρα</span><strong>{time}</strong></div>
+                <div><span>Κουρέας</span><strong>{assignedBarberName}</strong></div>
                 <div><span>Όνομα πελάτη</span><strong>{customer.name}</strong></div>
                 <div><span>Κωδικός κράτησης</span><strong>{bookingId.slice(0, 8).toUpperCase()}</strong></div>
                 <div className="confirmation-total"><span>Κόστος υπηρεσίας</span><strong>{selectedService?.price} €</strong></div>
@@ -511,8 +553,10 @@ export default function Home() {
                 onClick={() => {
                   setStep(1);
                   setBookingId("");
+                  setAssignedBarberName("");
                   setSubmitError("");
                   setServiceId("");
+                  setBarberId(barbers.length === 1 ? barbers[0].id : null);
                   setDate("");
                   setDateError("");
                   setTime("");
