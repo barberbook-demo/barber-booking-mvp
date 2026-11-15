@@ -6,7 +6,8 @@ import BookingsTab from "./components/BookingsTab";
 import ServicesTab from "./components/ServicesTab";
 import HoursTab from "./components/HoursTab";
 import BlockedPeriodsTab from "./components/BlockedPeriodsTab";
-import type { Booking, BookingConflict, BookingFilter, BlockedPeriod, BusinessDay, Service } from "./components/types";
+import StaffTab from "./components/StaffTab";
+import type { Barber, BarberBusinessDay, Booking, BookingConflict, BookingFilter, BlockedPeriod, BusinessDay, Service } from "./components/types";
 
 type AuthState = "loading" | "signed_out" | "checking" | "authorized" | "unauthorized" | "error";
 
@@ -50,13 +51,17 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
   const [hours, setHours] = useState<BusinessDay[]>(EMPTY_HOURS);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [selectedBarberId, setSelectedBarberId] = useState("");
+  const [barberHours, setBarberHours] = useState<BarberBusinessDay[]>([]);
+  const [barberFilter, setBarberFilter] = useState("all");
   const [dataError, setDataError] = useState("");
   const [notice, setNotice] = useState("");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
   const [bookingDate, setBookingDate] = useState(athensDate(new Date()));
   const [activeTab, setActiveTab] = useState<"appointments" | "management">("appointments");
-  const [managementTab, setManagementTab] = useState<"services" | "hours" | "blocked">("services");
+  const [managementTab, setManagementTab] = useState<"services" | "hours" | "blocked" | "staff">("services");
   const [blockedPeriods, setBlockedPeriods] = useState<BlockedPeriod[]>([]);
   const [bookingConflicts, setBookingConflicts] = useState<BookingConflict[]>([]);
   const [newName, setNewName] = useState("");
@@ -98,6 +103,10 @@ export default function AdminPage() {
       setManagementTab("services");
       setServices([]);
       setHours(EMPTY_HOURS);
+      setBarbers([]);
+      setSelectedBarberId("");
+      setBarberHours([]);
+      setBookings([]);
       setBlockedPeriods([]);
       setBookingConflicts([]);
       return;
@@ -119,14 +128,16 @@ export default function AdminPage() {
         return;
       }
 
-      const [serviceResult, hoursResult, bookingResult, blockedResult] = await Promise.all([
+      const [serviceResult, hoursResult, bookingResult, blockedResult, barbersResult, barberHoursResult] = await Promise.all([
         supabase!.from("services").select("id, name, price, active").order("name"),
         supabase!.from("business_hours").select("weekday, is_open, opens_at, closes_at, break_start, break_end").order("weekday"),
-        supabase!.from("bookings").select("id, service_id, customer_name, customer_phone, customer_email, starts_at, status, services(name)").order("starts_at", { ascending: false }),
-        supabase!.from("blocked_periods").select("id, starts_at, ends_at, reason").order("starts_at", { ascending: true }),
+        supabase!.from("bookings").select("id, service_id, barber_id, customer_name, customer_phone, customer_email, starts_at, status, services(name), barbers(name)").order("starts_at", { ascending: false }),
+        supabase!.from("blocked_periods").select("id, starts_at, ends_at, reason, barber_id, barbers(name)").order("starts_at", { ascending: true }),
+        supabase!.from("barbers").select("id, name, photo_path, is_active, sort_order, created_at").order("sort_order").order("created_at"),
+        supabase!.from("barber_business_hours").select("barber_id, weekday, is_open, opens_at, closes_at, break_start, break_end").order("weekday"),
       ]);
       if (cancelled) return;
-      if (serviceResult.error || hoursResult.error || bookingResult.error || blockedResult.error) {
+      if (serviceResult.error || hoursResult.error || bookingResult.error || blockedResult.error || barbersResult.error || barberHoursResult.error) {
         setAuthState("error");
         setDataError("Δεν ήταν δυνατή η φόρτωση των ρυθμίσεων. Δοκίμασε ξανά.");
         return;
@@ -137,7 +148,15 @@ export default function AdminPage() {
         price: Number(item.price),
       })));
       setBookings((bookingResult.data ?? []) as unknown as Booking[]);
-      setBlockedPeriods((blockedResult.data ?? []) as BlockedPeriod[]);
+      const loadedBarbers = (barbersResult.data ?? []) as Barber[];
+      setBarbers(loadedBarbers);
+      setSelectedBarberId((current) => loadedBarbers.some((barber) => barber.id === current) ? current : (loadedBarbers.find((barber) => barber.is_active)?.id ?? loadedBarbers[0]?.id ?? ""));
+      setBarberHours((barberHoursResult.data ?? []).map((day) => ({
+        ...day,
+        opens_at: timeValue(day.opens_at), closes_at: timeValue(day.closes_at),
+        break_start: timeValue(day.break_start), break_end: timeValue(day.break_end),
+      })) as BarberBusinessDay[]);
+      setBlockedPeriods((blockedResult.data ?? []) as unknown as BlockedPeriod[]);
       setBookingConflicts([]);
       const savedHours = new Map((hoursResult.data ?? []).map((day) => [day.weekday, day]));
       setHours(EMPTY_HOURS.map((day) => {
@@ -162,7 +181,7 @@ export default function AdminPage() {
     const channel = supabase.channel("barberbook-admin-bookings")
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => {
         void supabase.from("bookings")
-          .select("id, service_id, customer_name, customer_phone, customer_email, starts_at, status, services(name)")
+          .select("id, service_id, barber_id, customer_name, customer_phone, customer_email, starts_at, status, services(name), barbers(name)")
           .order("starts_at", { ascending: false })
           .then(({ data }) => { if (data) setBookings(data as unknown as Booking[]); });
       }).subscribe();
@@ -194,6 +213,7 @@ export default function AdminPage() {
   const todayInAthens = athensDate(new Date());
   const visibleBookings = bookings.filter((booking) => {
     const localDate = athensDate(booking.starts_at);
+    if (barberFilter !== "all" && booking.barber_id !== barberFilter) return false;
     if (bookingFilter === "today") return localDate === todayInAthens;
     if (bookingFilter === "upcoming") return new Date(booking.starts_at).getTime() >= Date.now();
     if (bookingFilter === "date") return localDate === bookingDate;
@@ -278,7 +298,7 @@ export default function AdminPage() {
     setBusy(false);
   }
 
-  async function createBlockedPeriod(startsAt: string, endsAt: string, reason: string): Promise<boolean> {
+  async function createBlockedPeriod(startsAt: string, endsAt: string, reason: string, barberId: string | null): Promise<boolean> {
     if (!supabase) return false;
     setBusy(true);
     setDataError("");
@@ -288,6 +308,7 @@ export default function AdminPage() {
       p_starts_at: startsAt,
       p_ends_at: endsAt,
       p_reason: reason.trim() || null,
+      p_barber_id: barberId,
     });
     if (error) {
       const message = error.message ?? "";
@@ -312,7 +333,7 @@ export default function AdminPage() {
       return false;
     }
     const { data: latest, error: refreshError } = await supabase.from("blocked_periods")
-      .select("id, starts_at, ends_at, reason").order("starts_at", { ascending: true });
+      .select("id, starts_at, ends_at, reason, barber_id, barbers(name)").order("starts_at", { ascending: true });
     if (refreshError) {
       setDataError("Ο αποκλεισμός δημιουργήθηκε, αλλά η ανανέωση της λίστας απέτυχε.");
     } else {
@@ -337,6 +358,176 @@ export default function AdminPage() {
       setNotice("Ο αποκλεισμός αφαιρέθηκε.");
     }
     setBusy(false);
+  }
+
+  async function addBarber(name: string): Promise<boolean> {
+    if (!supabase || name.trim().length < 2) return false;
+    setBusy(true);
+    setDataError("");
+    const { data, error } = await supabase.from("barbers")
+      .insert({ name: name.trim(), sort_order: barbers.length })
+      .select("id, name, photo_path, is_active, sort_order, created_at")
+      .single();
+    if (error || !data) {
+      setDataError("Ο νέος κουρέας δεν αποθηκεύτηκε. Δοκίμασε ξανά.");
+      setBusy(false);
+      return false;
+    }
+    const { data: schedule, error: scheduleError } = await supabase.from("barber_business_hours")
+      .select("barber_id, weekday, is_open, opens_at, closes_at, break_start, break_end")
+      .eq("barber_id", data.id).order("weekday");
+    if (scheduleError) {
+      setDataError("Ο κουρέας δημιουργήθηκε, αλλά δεν φορτώθηκε το αρχικό του ωράριο.");
+    }
+    setBarbers((current) => [...current, data as Barber].sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at)));
+    setBarberHours((current) => [...current, ...((schedule ?? []).map((day) => ({
+      ...day, opens_at: timeValue(day.opens_at), closes_at: timeValue(day.closes_at),
+      break_start: timeValue(day.break_start), break_end: timeValue(day.break_end),
+    })) as BarberBusinessDay[])]);
+    setSelectedBarberId(data.id);
+    setNotice("Ο κουρέας προστέθηκε με αρχικό ωράριο από το κατάστημα.");
+    setBusy(false);
+    return true;
+  }
+
+  async function renameBarber(barber: Barber, name: string): Promise<boolean> {
+    if (!supabase || name.trim().length < 2) return false;
+    setBusy(true);
+    setDataError("");
+    const { data, error } = await supabase.from("barbers").update({ name: name.trim() })
+      .eq("id", barber.id).select("id").maybeSingle();
+    if (error || !data) {
+      setDataError("Το όνομα του κουρέα δεν αποθηκεύτηκε.");
+      setBusy(false);
+      return false;
+    }
+    setBarbers((current) => current.map((item) => item.id === barber.id ? { ...item, name: name.trim() } : item));
+    setBookings((current) => current.map((booking) => booking.barber_id === barber.id ? { ...booking, barbers: { name: name.trim() } } : booking));
+    setNotice("Το όνομα του κουρέα ενημερώθηκε.");
+    setBusy(false);
+    return true;
+  }
+
+  async function toggleBarber(barber: Barber) {
+    if (!supabase) return;
+    setBusy(true);
+    setDataError("");
+    const { data, error } = await supabase.from("barbers").update({ is_active: !barber.is_active })
+      .eq("id", barber.id).select("id").maybeSingle();
+    if (error || !data) setDataError("Η κατάσταση του κουρέα δεν άλλαξε.");
+    else {
+      setBarbers((current) => current.map((item) => item.id === barber.id ? { ...item, is_active: !item.is_active } : item));
+      setNotice(barber.is_active ? "Ο κουρέας απενεργοποιήθηκε. Οι υπάρχουσες κρατήσεις του διατηρούνται." : "Ο κουρέας ενεργοποιήθηκε.");
+    }
+    setBusy(false);
+  }
+
+  async function uploadBarberPhoto(barber: Barber, file: File) {
+    if (!supabase) return;
+    const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+    const extension = extensions[file.type];
+    if (!extension || file.size > 3 * 1024 * 1024) {
+      setDataError("Επίλεξε εικόνα JPG, PNG ή WebP έως 3 MB.");
+      return;
+    }
+    setBusy(true);
+    setDataError("");
+    const path = `${barber.id}/${crypto.randomUUID()}.${extension}`;
+    const { error: uploadError } = await supabase.storage.from("barber-photos")
+      .upload(path, file, { cacheControl: "3600", contentType: file.type, upsert: false });
+    if (uploadError) {
+      setDataError("Η φωτογραφία δεν ανέβηκε. Δοκίμασε ξανά.");
+      setBusy(false);
+      return;
+    }
+    const { data, error } = await supabase.from("barbers").update({ photo_path: path })
+      .eq("id", barber.id).select("id").maybeSingle();
+    if (error || !data) {
+      await supabase.storage.from("barber-photos").remove([path]);
+      setDataError("Η φωτογραφία ανέβηκε, αλλά δεν συνδέθηκε με το προφίλ.");
+      setBusy(false);
+      return;
+    }
+    if (barber.photo_path) await supabase.storage.from("barber-photos").remove([barber.photo_path]);
+    setBarbers((current) => current.map((item) => item.id === barber.id ? { ...item, photo_path: path } : item));
+    setNotice("Η φωτογραφία του κουρέα ενημερώθηκε.");
+    setBusy(false);
+  }
+
+  async function removeBarberPhoto(barber: Barber) {
+    if (!supabase || !barber.photo_path) return;
+    setBusy(true);
+    setDataError("");
+    const { data, error } = await supabase.from("barbers").update({ photo_path: null })
+      .eq("id", barber.id).select("id").maybeSingle();
+    if (error || !data) setDataError("Η φωτογραφία δεν αφαιρέθηκε από το προφίλ.");
+    else {
+      await supabase.storage.from("barber-photos").remove([barber.photo_path]);
+      setBarbers((current) => current.map((item) => item.id === barber.id ? { ...item, photo_path: null } : item));
+      setNotice("Η φωτογραφία αφαιρέθηκε.");
+    }
+    setBusy(false);
+  }
+
+  function updateBarberDay(weekday: number, changes: Partial<BusinessDay>) {
+    setBarberHours((current) => current.map((day) => {
+      if (day.barber_id !== selectedBarberId || day.weekday !== weekday) return day;
+      return { ...day, ...changes };
+    }));
+  }
+
+  async function saveBarberHours(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !selectedBarberId) return;
+    const selectedHours = barberHours.filter((day) => day.barber_id === selectedBarberId);
+    for (const day of selectedHours) {
+      if (!day.is_open) continue;
+      if (!day.opens_at || !day.closes_at || day.opens_at >= day.closes_at) {
+        setDataError("Για κάθε ανοιχτή ημέρα, η ώρα λήξης πρέπει να είναι μετά την ώρα έναρξης.");
+        return;
+      }
+      if (Boolean(day.break_start) !== Boolean(day.break_end)) {
+        setDataError("Συμπλήρωσε και τις δύο ώρες του διαλείμματος ή άφησέ τες κενές.");
+        return;
+      }
+      if (day.break_start && day.break_end &&
+        (day.break_start >= day.break_end || day.break_start < day.opens_at || day.break_end > day.closes_at)) {
+        setDataError("Το διάλειμμα πρέπει να βρίσκεται μέσα στο ατομικό ωράριο.");
+        return;
+      }
+    }
+    if (selectedHours.length !== 7) {
+      setDataError("Δεν φορτώθηκαν και οι επτά ημέρες του ατομικού ωραρίου.");
+      return;
+    }
+    const rows = selectedHours.map((day) => ({
+      barber_id: selectedBarberId,
+      weekday: day.weekday,
+      is_open: day.is_open,
+      opens_at: day.is_open ? day.opens_at : null,
+      closes_at: day.is_open ? day.closes_at : null,
+      break_start: day.is_open ? day.break_start || null : null,
+      break_end: day.is_open ? day.break_end || null : null,
+      updated_at: new Date().toISOString(),
+    }));
+    setBusy(true);
+    setDataError("");
+    const { data, error } = await supabase.from("barber_business_hours")
+      .upsert(rows, { onConflict: "barber_id,weekday" }).select("weekday");
+    if (error || !data || data.length !== 7) setDataError("Το ατομικό ωράριο δεν αποθηκεύτηκε πλήρως.");
+    else {
+      setBarberHours((current) => current.map((day) => {
+        const saved = rows.find((row) => row.weekday === day.weekday && row.barber_id === day.barber_id);
+        return saved ? { ...saved, opens_at: timeValue(saved.opens_at), closes_at: timeValue(saved.closes_at), break_start: timeValue(saved.break_start), break_end: timeValue(saved.break_end) } : day;
+      }));
+      setNotice("Το ατομικό ωράριο αποθηκεύτηκε.");
+    }
+    setBusy(false);
+  }
+
+  function getBarberPhotoUrl(barber: Barber | undefined) {
+    if (!supabase || !barber?.photo_path) return null;
+    return supabase.storage.from("barber-photos").getPublicUrl(barber.photo_path).data.publicUrl;
   }
 
   function updateDay(weekday: number, changes: Partial<BusinessDay>) {
@@ -464,9 +655,12 @@ export default function AdminPage() {
                 bookings={bookings}
                 visibleBookings={visibleBookings}
                 bookingFilter={bookingFilter}
+                barberFilter={barberFilter}
+                barbers={barbers}
                 bookingDate={bookingDate}
                 busy={busy}
                 onFilterChange={setBookingFilter}
+                onBarberFilterChange={setBarberFilter}
                 onDateChange={setBookingDate}
                 onCancel={(booking) => void cancelBooking(booking)}
                 formatDate={formatAdminDate}
@@ -478,6 +672,7 @@ export default function AdminPage() {
                   <button type="button" className={managementTab === "services" ? "admin-sub-tab is-active" : "admin-sub-tab"} aria-current={managementTab === "services" ? "page" : undefined} onClick={() => setManagementTab("services")}>Υπηρεσίες &amp; Τιμές</button>
                   <button type="button" className={managementTab === "hours" ? "admin-sub-tab is-active" : "admin-sub-tab"} aria-current={managementTab === "hours" ? "page" : undefined} onClick={() => setManagementTab("hours")}>Εβδομαδιαίο Ωράριο</button>
                   <button type="button" className={managementTab === "blocked" ? "admin-sub-tab is-active" : "admin-sub-tab"} aria-current={managementTab === "blocked" ? "page" : undefined} onClick={() => { setManagementTab("blocked"); setBookingConflicts([]); }}>Αποκλεισμένες περίοδοι</button>
+                  <button type="button" className={managementTab === "staff" ? "admin-sub-tab is-active" : "admin-sub-tab"} aria-current={managementTab === "staff" ? "page" : undefined} onClick={() => setManagementTab("staff")}>Προσωπικό</button>
                 </nav>
                 {managementTab === "services" ? (
                   <ServicesTab
@@ -499,9 +694,26 @@ export default function AdminPage() {
                     onDayChange={updateDay}
                     onSave={saveHours}
                   />
+                ) : managementTab === "staff" ? (
+                  <StaffTab
+                    barbers={barbers}
+                    selectedBarberId={selectedBarberId}
+                    hours={barberHours.filter((day) => day.barber_id === selectedBarberId)}
+                    busy={busy}
+                    photoUrl={getBarberPhotoUrl(barbers.find((barber) => barber.id === selectedBarberId))}
+                    onSelectBarber={setSelectedBarberId}
+                    onAdd={addBarber}
+                    onRename={renameBarber}
+                    onToggle={(barber) => void toggleBarber(barber)}
+                    onPhotoUpload={(barber, file) => void uploadBarberPhoto(barber, file)}
+                    onPhotoRemove={(barber) => void removeBarberPhoto(barber)}
+                    onDayChange={updateBarberDay}
+                    onSaveHours={saveBarberHours}
+                  />
                 ) : (
                   <BlockedPeriodsTab
                     periods={blockedPeriods}
+                    barbers={barbers}
                     conflicts={bookingConflicts}
                     busy={busy}
                     today={todayInAthens}
