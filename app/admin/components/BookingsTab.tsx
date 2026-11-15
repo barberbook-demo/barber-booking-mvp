@@ -1,14 +1,17 @@
 "use client";
 
-import type { Booking, BookingFilter } from "./types";
+import type { Barber, Booking, BookingFilter } from "./types";
 
 type Props = {
   bookings: Booking[];
   visibleBookings: Booking[];
+  barbers: Barber[];
   bookingFilter: BookingFilter;
+  barberFilter: string;
   bookingDate: string;
   busy: boolean;
   onFilterChange: (filter: BookingFilter) => void;
+  onBarberFilterChange: (barberId: string) => void;
   onDateChange: (date: string) => void;
   onCancel: (booking: Booking) => void;
   formatDate: (value: string) => string;
@@ -16,8 +19,8 @@ type Props = {
 };
 
 export default function BookingsTab({
-  bookings, visibleBookings, bookingFilter, bookingDate, busy,
-  onFilterChange, onDateChange, onCancel, formatDate, formatTime,
+  bookings, visibleBookings, barbers, bookingFilter, barberFilter, bookingDate, busy,
+  onFilterChange, onBarberFilterChange, onDateChange, onCancel, formatDate, formatTime,
 }: Props) {
   return (
     <section className="admin-panel" aria-labelledby="admin-bookings-heading">
@@ -25,12 +28,19 @@ export default function BookingsTab({
         <div><p className="admin-eyebrow">01 / ΡΑΝΤΕΒΟΥ</p><h2 id="admin-bookings-heading">Ραντεβού πελατών</h2></div>
         <span>{bookings.length} συνολικά</span>
       </div>
-      <div className="admin-booking-filters" role="group" aria-label="Φίλτρο ραντεβού">
+      <div className="admin-booking-filters" role="group" aria-label="Φίλτρα ραντεβού">
         <button type="button" aria-pressed={bookingFilter === "all"} className={bookingFilter === "all" ? "admin-filter is-active" : "admin-filter"} onClick={() => onFilterChange("all")}>Όλα</button>
         <button type="button" aria-pressed={bookingFilter === "today"} className={bookingFilter === "today" ? "admin-filter is-active" : "admin-filter"} onClick={() => onFilterChange("today")}>Σήμερα</button>
         <button type="button" aria-pressed={bookingFilter === "upcoming"} className={bookingFilter === "upcoming" ? "admin-filter is-active" : "admin-filter"} onClick={() => onFilterChange("upcoming")}>Επερχόμενα</button>
         <button type="button" aria-pressed={bookingFilter === "date"} className={bookingFilter === "date" ? "admin-filter is-active" : "admin-filter"} onClick={() => onFilterChange("date")}>Ημερομηνία</button>
         {bookingFilter === "date" && <input aria-label="Επιλογή ημερομηνίας" type="date" value={bookingDate} onChange={(event) => onDateChange(event.target.value)} />}
+        <label className="admin-booking-barber-filter">
+          <span>Κουρέας</span>
+          <select aria-label="Φιλτράρισμα ανά κουρέα" value={barberFilter} onChange={(event) => onBarberFilterChange(event.target.value)}>
+            <option value="all">Όλοι οι κουρείς</option>
+            {barbers.map((barber) => <option key={barber.id} value={barber.id}>{barber.name}{barber.is_active ? "" : " (ανενεργός)"}</option>)}
+          </select>
+        </label>
       </div>
       {visibleBookings.length === 0 ? <p className="admin-muted">Δεν βρέθηκαν ραντεβού για αυτή την επιλογή.</p> : (
         <div className="admin-booking-list">
@@ -45,6 +55,7 @@ export default function BookingsTab({
               </div>
               <div className="admin-booking-meta">
                 <span><b>Υπηρεσία</b>{booking.services?.name ?? "Μη διαθέσιμη υπηρεσία"}</span>
+                <span><b>Κουρέας</b>{booking.barbers?.name ?? "Μη καταχωρισμένος"}</span>
                 <span><b>Τηλέφωνο</b><a href={`tel:${booking.customer_phone}`}>{booking.customer_phone}</a></span>
                 <span><b>Email</b><a href={`mailto:${booking.customer_email}`}>{booking.customer_email}</a></span>
               </div>
