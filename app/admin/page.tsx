@@ -5,7 +5,8 @@ import { createClient } from "@supabase/supabase-js";
 import BookingsTab from "./components/BookingsTab";
 import ServicesTab from "./components/ServicesTab";
 import HoursTab from "./components/HoursTab";
-import type { Booking, BookingFilter, BusinessDay, Service } from "./components/types";
+import BlockedPeriodsTab from "./components/BlockedPeriodsTab";
+import type { Booking, BookingConflict, BookingFilter, BlockedPeriod, BusinessDay, Service } from "./components/types";
 
 type AuthState = "loading" | "signed_out" | "checking" | "authorized" | "unauthorized" | "error";
 
@@ -55,7 +56,9 @@ export default function AdminPage() {
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
   const [bookingDate, setBookingDate] = useState(athensDate(new Date()));
   const [activeTab, setActiveTab] = useState<"appointments" | "management">("appointments");
-  const [managementTab, setManagementTab] = useState<"services" | "hours">("services");
+  const [managementTab, setManagementTab] = useState<"services" | "hours" | "blocked">("services");
+  const [blockedPeriods, setBlockedPeriods] = useState<BlockedPeriod[]>([]);
+  const [bookingConflicts, setBookingConflicts] = useState<BookingConflict[]>([]);
   const [newName, setNewName] = useState("");
   const [newPrice, setNewPrice] = useState("15");
 
@@ -95,6 +98,8 @@ export default function AdminPage() {
       setManagementTab("services");
       setServices([]);
       setHours(EMPTY_HOURS);
+      setBlockedPeriods([]);
+      setBookingConflicts([]);
       return;
     }
 
@@ -114,13 +119,14 @@ export default function AdminPage() {
         return;
       }
 
-      const [serviceResult, hoursResult, bookingResult] = await Promise.all([
+      const [serviceResult, hoursResult, bookingResult, blockedResult] = await Promise.all([
         supabase!.from("services").select("id, name, price, active").order("name"),
         supabase!.from("business_hours").select("weekday, is_open, opens_at, closes_at, break_start, break_end").order("weekday"),
         supabase!.from("bookings").select("id, service_id, customer_name, customer_phone, customer_email, starts_at, status, services(name)").order("starts_at", { ascending: false }),
+        supabase!.from("blocked_periods").select("id, starts_at, ends_at, reason").order("starts_at", { ascending: true }),
       ]);
       if (cancelled) return;
-      if (serviceResult.error || hoursResult.error || bookingResult.error) {
+      if (serviceResult.error || hoursResult.error || bookingResult.error || blockedResult.error) {
         setAuthState("error");
         setDataError("Δεν ήταν δυνατή η φόρτωση των ρυθμίσεων. Δοκίμασε ξανά.");
         return;
@@ -131,6 +137,8 @@ export default function AdminPage() {
         price: Number(item.price),
       })));
       setBookings((bookingResult.data ?? []) as unknown as Booking[]);
+      setBlockedPeriods((blockedResult.data ?? []) as BlockedPeriod[]);
+      setBookingConflicts([]);
       const savedHours = new Map((hoursResult.data ?? []).map((day) => [day.weekday, day]));
       setHours(EMPTY_HOURS.map((day) => {
         const saved = savedHours.get(day.weekday);
@@ -266,6 +274,67 @@ export default function AdminPage() {
     else {
       setServices((current) => current.map((item) => item.id === service.id ? { ...item, active: !item.active } : item));
       setNotice(service.active ? "Η υπηρεσία απενεργοποιήθηκε. Οι παλιές κρατήσεις της διατηρούνται." : "Η υπηρεσία ενεργοποιήθηκε.");
+    }
+    setBusy(false);
+  }
+
+  async function createBlockedPeriod(startsAt: string, endsAt: string, reason: string): Promise<boolean> {
+    if (!supabase) return false;
+    setBusy(true);
+    setDataError("");
+    setNotice("");
+    setBookingConflicts([]);
+    const { data, error } = await supabase.rpc("create_blocked_period", {
+      p_starts_at: startsAt,
+      p_ends_at: endsAt,
+      p_reason: reason.trim() || null,
+    });
+    if (error) {
+      const message = error.message ?? "";
+      setDataError(message.includes("INVALID_LOCAL_TIME")
+        ? "Η επιλεγμένη ώρα δεν υπάρχει λόγω αλλαγής θερινής/χειμερινής ώρας. Επίλεξε άλλη ώρα."
+        : message.includes("INVALID_BLOCKED_PERIOD")
+          ? "Έλεγξε ότι η ημερομηνία και ώρα λήξης είναι μετά την έναρξη."
+          : "Ο αποκλεισμός δεν αποθηκεύτηκε. Έλεγξε τα στοιχεία και δοκίμασε ξανά.");
+      setBusy(false);
+      return false;
+    }
+    const result = Array.isArray(data) ? data[0] : data;
+    const affected = (result?.conflicting_bookings ?? []) as BookingConflict[];
+    if (affected.length > 0) {
+      setBookingConflicts(affected);
+      setBusy(false);
+      return false;
+    }
+    if (!result?.blocked_period_id) {
+      setDataError("Δεν επιβεβαιώθηκε η αποθήκευση του αποκλεισμού.");
+      setBusy(false);
+      return false;
+    }
+    const { data: latest, error: refreshError } = await supabase.from("blocked_periods")
+      .select("id, starts_at, ends_at, reason").order("starts_at", { ascending: true });
+    if (refreshError) {
+      setDataError("Ο αποκλεισμός δημιουργήθηκε, αλλά η ανανέωση της λίστας απέτυχε.");
+    } else {
+      setBlockedPeriods((latest ?? []) as BlockedPeriod[]);
+      setNotice("Ο αποκλεισμός αποθηκεύτηκε. Οι αντίστοιχες ώρες αφαιρέθηκαν από τη διαθεσιμότητα.");
+    }
+    setBusy(false);
+    return true;
+  }
+
+  async function deleteBlockedPeriod(period: BlockedPeriod) {
+    if (!supabase) return;
+    if (!window.confirm(`Να αφαιρεθεί ο αποκλεισμός της ${formatAdminDate(period.starts_at)};`)) return;
+    setBusy(true);
+    setDataError("");
+    const { data, error } = await supabase.from("blocked_periods")
+      .delete().eq("id", period.id).select("id").maybeSingle();
+    if (error || !data) {
+      setDataError("Ο αποκλεισμός δεν αφαιρέθηκε. Έλεγξε τα δικαιώματα και δοκίμασε ξανά.");
+    } else {
+      setBlockedPeriods((current) => current.filter((item) => item.id !== period.id));
+      setNotice("Ο αποκλεισμός αφαιρέθηκε.");
     }
     setBusy(false);
   }
@@ -408,6 +477,7 @@ export default function AdminPage() {
                 <nav className="admin-sub-tabs" aria-label="Ρυθμίσεις καταστήματος">
                   <button type="button" className={managementTab === "services" ? "admin-sub-tab is-active" : "admin-sub-tab"} aria-current={managementTab === "services" ? "page" : undefined} onClick={() => setManagementTab("services")}>Υπηρεσίες &amp; Τιμές</button>
                   <button type="button" className={managementTab === "hours" ? "admin-sub-tab is-active" : "admin-sub-tab"} aria-current={managementTab === "hours" ? "page" : undefined} onClick={() => setManagementTab("hours")}>Εβδομαδιαίο Ωράριο</button>
+                  <button type="button" className={managementTab === "blocked" ? "admin-sub-tab is-active" : "admin-sub-tab"} aria-current={managementTab === "blocked" ? "page" : undefined} onClick={() => { setManagementTab("blocked"); setBookingConflicts([]); }}>Αποκλεισμένες περίοδοι</button>
                 </nav>
                 {managementTab === "services" ? (
                   <ServicesTab
@@ -422,12 +492,24 @@ export default function AdminPage() {
                     onSave={(service) => void saveService(service)}
                     onToggle={(service) => void toggleService(service)}
                   />
-                ) : (
+                ) : managementTab === "hours" ? (
                   <HoursTab
                     hours={hours}
                     busy={busy}
                     onDayChange={updateDay}
                     onSave={saveHours}
+                  />
+                ) : (
+                  <BlockedPeriodsTab
+                    periods={blockedPeriods}
+                    conflicts={bookingConflicts}
+                    busy={busy}
+                    today={todayInAthens}
+                    onCreate={createBlockedPeriod}
+                    onDelete={deleteBlockedPeriod}
+                    onDismissConflicts={() => setBookingConflicts([])}
+                    formatDate={formatAdminDate}
+                    formatTime={formatAdminTime}
                   />
                 )}
               </>
