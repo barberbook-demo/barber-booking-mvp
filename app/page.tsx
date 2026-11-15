@@ -244,7 +244,7 @@ export default function Home() {
       });
       if (error) {
         const message = error.message ?? "";
-        if (message.includes("SLOT_UNAVAILABLE") || message.includes("bookings_one_confirmed_per_slot")) {
+        if (message.includes("SLOT_UNAVAILABLE") || message.includes("bookings_one_confirmed_per_barber_slot")) {
           setSubmitError("Η ώρα μόλις δεσμεύτηκε από άλλον πελάτη. Επίλεξε μία από τις νέες διαθέσιμες ώρες.");
         } else if (message.includes("BARBER_UNAVAILABLE")) {
           setSubmitError("Ο κουρέας δεν είναι πλέον διαθέσιμος. Επίλεξε ξανά κουρέα ή «Δεν έχω προτίμηση».");
