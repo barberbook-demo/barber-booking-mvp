@@ -18,3 +18,7 @@ export type BusinessDay = {
   break_start: string | null;
   break_end: string | null;
 };
+
+
+export type BlockedPeriod = { id: string; starts_at: string; ends_at: string; reason: string | null };
+export type BookingConflict = { id: string; customer_name: string; service_name: string | null; starts_at: string };
