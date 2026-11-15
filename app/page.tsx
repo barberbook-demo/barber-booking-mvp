@@ -261,7 +261,8 @@ export default function Home() {
         return;
       }
       setBookingId(created.booking_id);
-      setAssignedBarberName(barbers.find((barber) => barber.id === created.barber_id)?.name ?? "Κουρέας");
+      const { data: assignedBarber } = await supabase.from("barbers").select("name").eq("id", created.barber_id).maybeSingle();
+      setAssignedBarberName(assignedBarber?.name ?? barbers.find((barber) => barber.id === created.barber_id)?.name ?? "Κουρέας");
       setStep(6);
     } catch {
       setSubmitError("Παρουσιάστηκε προσωρινό πρόβλημα. Η κράτηση δεν επιβεβαιώθηκε· δοκίμασε ξανά.");
