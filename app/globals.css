@@ -444,3 +444,46 @@ button:focus-visible, input:focus-visible, a:focus-visible {
   .admin-sub-tabs { display: grid; grid-template-columns: 1fr; gap: 7px; }
   .admin-sub-tab { width: 100%; text-align: left; }
 }
+
+
+/* Admin blocked period management */
+.admin-block-form { padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #f8f7f4; }
+.admin-block-mode { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 17px; }
+.admin-block-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.admin-block-fields label, .admin-block-reason {
+  display: grid; gap: 7px; color: #55534d; font-size: 11px; font-weight: 700;
+}
+.admin-block-fields input, .admin-block-reason input {
+  width: 100%; min-width: 0; height: 42px; padding: 0 11px;
+  border: 1px solid #dedcd5; border-radius: 6px; background: #fff; color: var(--ink);
+  font: inherit; font-size: 13px;
+}
+.admin-block-reason { margin-top: 14px; }
+.admin-block-reason span { display: inline; color: var(--muted); font-weight: 500; }
+.admin-block-hint { margin: 12px 0 0; font-size: 11px; }
+.admin-block-form .admin-hours-footer { align-items: flex-end; }
+.admin-block-form .admin-hours-footer .admin-muted { max-width: 540px; font-size: 11px; }
+.admin-block-conflicts {
+  margin-top: 18px; padding: 16px; border: 1px solid #e8c6bd; border-radius: 8px;
+  background: #fff7f4; color: #7e3d32; font-size: 12px; line-height: 1.55;
+}
+.admin-block-conflicts-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.admin-block-conflicts p { margin: 8px 0 10px; }
+.admin-block-conflicts ul { display: grid; gap: 8px; margin: 0; padding-left: 19px; }
+.admin-block-conflicts li { padding-left: 2px; }
+.admin-block-conflicts li span { display: block; color: #8b5a50; font-size: 11px; }
+.admin-block-list { border-top: 1px solid var(--line); }
+.admin-block-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 16px 0; border-bottom: 1px solid var(--line);
+}
+.admin-block-summary { display: grid; gap: 4px; min-width: 0; }
+.admin-block-summary strong { font-size: 13px; }
+.admin-block-summary span { color: var(--muted); font-size: 12px; }
+.admin-block-summary small { color: var(--accent-dark); font-size: 11px; }
+@media (max-width: 640px) {
+  .admin-block-fields { grid-template-columns: 1fr; }
+  .admin-block-row { align-items: stretch; flex-direction: column; }
+  .admin-block-row .admin-secondary { width: 100%; }
+  .admin-block-form .admin-hours-footer { align-items: stretch; }
+}
