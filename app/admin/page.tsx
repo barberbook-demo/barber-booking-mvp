@@ -156,7 +156,10 @@ export default function AdminPage() {
         opens_at: timeValue(day.opens_at), closes_at: timeValue(day.closes_at),
         break_start: timeValue(day.break_start), break_end: timeValue(day.break_end),
       })) as BarberBusinessDay[]);
-      setBlockedPeriods((blockedResult.data ?? []) as unknown as BlockedPeriod[]);
+      setBlockedPeriods((blockedResult.data ?? []).map((period) => ({
+        ...period,
+        barbers: period.barbers?.[0] ?? null,
+      })));
       setBookingConflicts([]);
       const savedHours = new Map((hoursResult.data ?? []).map((day) => [day.weekday, day]));
       setHours(EMPTY_HOURS.map((day) => {
@@ -337,7 +340,10 @@ export default function AdminPage() {
     if (refreshError) {
       setDataError("Ο αποκλεισμός δημιουργήθηκε, αλλά η ανανέωση της λίστας απέτυχε.");
     } else {
-      setBlockedPeriods((latest ?? []) as BlockedPeriod[]);
+      setBlockedPeriods((latest ?? []).map((period) => ({
+        ...period,
+        barbers: period.barbers?.[0] ?? null,
+      })));
       setNotice("Ο αποκλεισμός αποθηκεύτηκε. Οι αντίστοιχες ώρες αφαιρέθηκαν από τη διαθεσιμότητα.");
     }
     setBusy(false);
