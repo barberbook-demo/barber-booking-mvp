@@ -166,7 +166,7 @@ export default function Home() {
   const selectedBarber = barbers.find((barber) => barber.id === barberId);
 
   function goBack() {
-    setStep((current) => current === 3 && barbers.length === 1 ? 1 : Math.max(1, current - 1));
+    setStep((current) => Math.max(1, current - 1));
   }
 
   async function handleDateChange(value: string) {
@@ -372,7 +372,7 @@ export default function Home() {
                 className="primary-button"
                 type="button"
                 disabled={servicesLoading || barbersLoading || Boolean(servicesError) || services.length === 0 || barbers.length === 0 || !serviceId}
-                onClick={() => setStep(barbers.length > 1 ? 2 : 3)}
+                onClick={() => setStep(2)}
               >
                 Συνέχεια <span aria-hidden="true">→</span>
               </button>
