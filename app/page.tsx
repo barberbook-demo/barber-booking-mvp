@@ -261,8 +261,26 @@ export default function Home() {
         return;
       }
       setBookingId(created.booking_id);
-      const { data: assignedBarber } = await supabase.from("barbers").select("name").eq("id", created.barber_id).maybeSingle();
-      setAssignedBarberName(assignedBarber?.name ?? barbers.find((barber) => barber.id === created.barber_id)?.name ?? "Κουρέας");
+
+      const fallbackBarberName =
+        barbers.find((barber) => barber.id === created.barber_id)?.name ?? "Κουρέας";
+      let confirmationBarberName = fallbackBarberName;
+
+      try {
+        const { data: assignedBarber, error: barberLookupError } = await supabase
+          .from("barbers")
+          .select("name")
+          .eq("id", created.barber_id)
+          .maybeSingle();
+
+        if (!barberLookupError && assignedBarber?.name) {
+          confirmationBarberName = assignedBarber.name;
+        }
+      } catch {
+        // Η κράτηση έχει ήδη αποθηκευτεί· διατηρούμε το διαθέσιμο όνομα fallback.
+      }
+
+      setAssignedBarberName(confirmationBarberName);
       setStep(6);
     } catch {
       setSubmitError("Παρουσιάστηκε προσωρινό πρόβλημα. Η κράτηση δεν επιβεβαιώθηκε· δοκίμασε ξανά.");
