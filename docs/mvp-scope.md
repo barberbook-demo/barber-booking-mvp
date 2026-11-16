@@ -9,7 +9,7 @@ This document is the authoritative source of truth for the MVP. The multi-barber
 ## 2. Customer Booking Flow
 
 1. The customer views active services and selects one.
-2. If more than one active barber exists, the customer chooses a specific barber or “Δεν έχω προτίμηση”. If exactly one active barber exists, that barber is selected automatically and this step is skipped.
+2. If at least one active barber exists, the customer always sees the barber-selection step. With exactly one active barber, that barber is preselected; with multiple active barbers, all active barbers are shown. The customer can also select “Δεν έχω προτίμηση”. Inactive barbers are never shown.
 3. The customer selects a date.
 4. The system displays available 30-minute slots:
    - For a selected barber, only slots available for that barber are shown.
@@ -89,7 +89,7 @@ These features require a separate scope decision.
 - The administrator can add, edit, activate, deactivate, and optionally upload a photo for barbers.
 - The administrator can configure weekly hours for each barber independently.
 - Shop hours cap all barber schedules; barber-specific leave and blocked periods affect only the selected barber; shop-wide blocks affect all barbers.
-- The customer sees the barber selection step only when there is more than one active barber; one active barber is automatically selected.
+- The customer always sees the barber selection step when at least one active barber exists; with one active barber it is preselected, and with multiple active barbers all active barbers are shown. “Δεν έχω προτίμηση” remains available.
 - Selecting a barber shows only that barber's available slots. “Δεν έχω προτίμηση” shows slots available for at least one active barber.
 - “Δεν έχω προτίμηση” always results in an atomic assignment to a real available barber, returned in the booking confirmation.
 - Two different barbers can be booked at the same time.
